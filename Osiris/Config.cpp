@@ -789,8 +789,39 @@ void Config::load(size_t id) noexcept
         if (miscJson.isMember("Auto accept")) misc.autoAccept = miscJson["Auto accept"].asBool();
         if (miscJson.isMember("Radar hack")) misc.radarHack = miscJson["Radar hack"].asBool();
         if (miscJson.isMember("Reveal ranks")) misc.revealRanks = miscJson["Reveal ranks"].asBool();
-        if (miscJson.isMember("Spectator list")) misc.spectatorList = miscJson["Spectator list"].asBool();
-        if (miscJson.isMember("Watermark")) misc.watermark = miscJson["Watermark"].asBool();
+
+        if (const auto& spectatorList{ miscJson["Spectator list"] }; spectatorList.isObject()) {
+            if (const auto& enabled{ spectatorList["Enabled"] }; enabled.isBool())
+                misc.spectatorList.enabled = enabled.asBool();
+
+            if (const auto& color{ spectatorList["Color"] }; color.isArray()) {
+                misc.spectatorList.color[0] = color[0].asFloat();
+                misc.spectatorList.color[1] = color[1].asFloat();
+                misc.spectatorList.color[2] = color[2].asFloat();
+            }
+            if (const auto& rainbow{ spectatorList["Rainbow"] }; rainbow.isBool())
+                misc.spectatorList.rainbow = rainbow.asBool();
+
+            if (const auto& rainbowSpeed{ spectatorList["Rainbow speed"] }; rainbowSpeed.isDouble())
+                misc.spectatorList.rainbowSpeed = rainbowSpeed.asFloat();
+        }
+
+        if (const auto& watermark{ miscJson["Watermark"] }; watermark.isObject()) {
+            if (const auto& enabled{ watermark["Enabled"] }; enabled.isBool())
+                misc.watermark.enabled = enabled.asBool();
+
+            if (const auto& color{ watermark["Color"] }; color.isArray()) {
+                misc.watermark.color[0] = color[0].asFloat();
+                misc.watermark.color[1] = color[1].asFloat();
+                misc.watermark.color[2] = color[2].asFloat();
+            }
+            if (const auto& rainbow{ watermark["Rainbow"] }; rainbow.isBool())
+                misc.watermark.rainbow = rainbow.asBool();
+
+            if (const auto& rainbowSpeed{ watermark["Rainbow speed"] }; rainbowSpeed.isDouble())
+                misc.watermark.rainbowSpeed = rainbowSpeed.asFloat();
+        }
+
         if (miscJson.isMember("Fix animation LOD")) misc.fixAnimationLOD = miscJson["Fix animation LOD"].asBool();
         if (miscJson.isMember("Fix bone matrix")) misc.fixBoneMatrix = miscJson["Fix bone matrix"].asBool();
         if (miscJson.isMember("Fix movement")) misc.fixMovement = miscJson["Fix movement"].asBool();
@@ -802,7 +833,23 @@ void Config::load(size_t id) noexcept
         if (miscJson.isMember("Ban color")) misc.banColor = miscJson["Ban color"].asInt();
         if (miscJson.isMember("Ban text")) strcpy_s(misc.banText, sizeof(misc.banText), miscJson["Ban text"].asCString());
         if (miscJson.isMember("Fast plant")) misc.fastPlant = miscJson["Fast plant"].asBool();
-        if (miscJson.isMember("Bomb timer")) misc.bombTimer = miscJson["Bomb timer"].asBool();
+
+        if (const auto& bombTimer{ miscJson["Bomb timer"] }; bombTimer.isObject()) {
+            if (const auto& enabled{ bombTimer["Enabled"] }; enabled.isBool())
+                misc.bombTimer.enabled = enabled.asBool();
+
+            if (const auto& color{ bombTimer["Color"] }; color.isArray()) {
+                misc.bombTimer.color[0] = color[0].asFloat();
+                misc.bombTimer.color[1] = color[1].asFloat();
+                misc.bombTimer.color[2] = color[2].asFloat();
+            }
+            if (const auto& rainbow{ bombTimer["Rainbow"] }; rainbow.isBool())
+                misc.bombTimer.rainbow = rainbow.asBool();
+
+            if (const auto& rainbowSpeed{ bombTimer["Rainbow speed"] }; rainbowSpeed.isDouble())
+                misc.bombTimer.rainbowSpeed = rainbowSpeed.asFloat();
+        }
+
         if (miscJson.isMember("Quick reload")) misc.quickReload = miscJson["Quick reload"].asBool();
         if (miscJson.isMember("Prepare revolver")) misc.prepareRevolver = miscJson["Prepare revolver"].asBool();
         if (miscJson.isMember("Prepare revolver key")) misc.prepareRevolverKey = miscJson["Prepare revolver key"].asInt();
@@ -1470,8 +1517,27 @@ void Config::save(size_t id) const noexcept
         miscJson["Auto accept"] = misc.autoAccept;
         miscJson["Radar hack"] = misc.radarHack;
         miscJson["Reveal ranks"] = misc.revealRanks;
-        miscJson["Spectator list"] = misc.spectatorList;
-        miscJson["Watermark"] = misc.watermark;
+
+        {
+            auto& spectatorListJson = miscJson["Spectator list"];
+            spectatorListJson["Enabled"] = misc.spectatorList.enabled;
+            spectatorListJson["Color"][0] = misc.spectatorList.color[0];
+            spectatorListJson["Color"][1] = misc.spectatorList.color[1];
+            spectatorListJson["Color"][2] = misc.spectatorList.color[2];
+            spectatorListJson["Rainbow"] = misc.spectatorList.rainbow;
+            spectatorListJson["Rainbow speed"] = misc.spectatorList.rainbowSpeed;
+        }
+
+        {
+            auto& watermarkJson = miscJson["Watermark"];
+            watermarkJson["Enabled"] = misc.watermark.enabled;
+            watermarkJson["Color"][0] = misc.watermark.color[0];
+            watermarkJson["Color"][1] = misc.watermark.color[1];
+            watermarkJson["Color"][2] = misc.watermark.color[2];
+            watermarkJson["Rainbow"] = misc.watermark.rainbow;
+            watermarkJson["Rainbow speed"] = misc.watermark.rainbowSpeed;
+        }
+
         miscJson["Fix animation LOD"] = misc.fixAnimationLOD;
         miscJson["Fix bone matrix"] = misc.fixBoneMatrix;
         miscJson["Fix movement"] = misc.fixMovement;
@@ -1483,7 +1549,17 @@ void Config::save(size_t id) const noexcept
         miscJson["Ban color"] = misc.banColor;
         miscJson["Ban text"] = misc.banText;
         miscJson["Fast plant"] = misc.fastPlant;
-        miscJson["Bomb timer"] = misc.bombTimer;
+
+        {
+            auto& bombTimerJson = miscJson["Bomb timer"];
+            bombTimerJson["Enabled"] = misc.bombTimer.enabled;
+            bombTimerJson["Color"][0] = misc.bombTimer.color[0];
+            bombTimerJson["Color"][1] = misc.bombTimer.color[1];
+            bombTimerJson["Color"][2] = misc.bombTimer.color[2];
+            bombTimerJson["Rainbow"] = misc.bombTimer.rainbow;
+            bombTimerJson["Rainbow speed"] = misc.bombTimer.rainbowSpeed;
+        }
+
         miscJson["Quick reload"] = misc.quickReload;
         miscJson["Prepare revolver"] = misc.prepareRevolver;
         miscJson["Prepare revolver key"] = misc.prepareRevolverKey;

@@ -27,13 +27,7 @@ GUI::GUI() noexcept
 
     ImGui::StyleColorsDark();
     ImGuiStyle& style = ImGui::GetStyle();
-    style.WindowRounding = 5.0f;
-    style.WindowBorderSize = 0.0f;
-    style.ChildBorderSize = 0.0f;
-    style.GrabMinSize = 7.0f;
-    style.GrabRounding = 5.0f;
-    style.FrameRounding = 5.0f;
-    style.PopupRounding = 5.0f;
+
     style.ScrollbarSize = 9.0f;
 
     ImGuiIO& io = ImGui::GetIO();
@@ -967,8 +961,8 @@ void GUI::renderMiscWindow() noexcept
         ImGui::Checkbox("Auto accept", &config.misc.autoAccept);
         ImGui::Checkbox("Radar hack", &config.misc.radarHack);
         ImGui::Checkbox("Reveal ranks", &config.misc.revealRanks);
-        ImGui::Checkbox("Spectator list", &config.misc.spectatorList);
-        ImGui::Checkbox("Watermark", &config.misc.watermark);
+        ImGuiCustom::colorPicker("Spectator list", config.misc.spectatorList.color, &config.misc.spectatorList.enabled, &config.misc.spectatorList.rainbow, &config.misc.spectatorList.rainbowSpeed);
+        ImGuiCustom::colorPicker("Watermark", config.misc.watermark.color, &config.misc.watermark.enabled, &config.misc.watermark.rainbow, &config.misc.watermark.rainbowSpeed);
         ImGui::Checkbox("Fix animation LOD", &config.misc.fixAnimationLOD);
         ImGui::Checkbox("Fix bone matrix", &config.misc.fixBoneMatrix);
         ImGui::Checkbox("Fix movement", &config.misc.fixMovement);
@@ -1009,7 +1003,7 @@ void GUI::renderMiscWindow() noexcept
         if (ImGui::Button("Setup fake ban"))
             Misc::fakeBan(true);
         ImGui::Checkbox("Fast plant", &config.misc.fastPlant);
-        ImGui::Checkbox("Bomb timer", &config.misc.bombTimer);
+        ImGuiCustom::colorPicker("Bomb timer", config.misc.bombTimer.color, &config.misc.bombTimer.enabled, &config.misc.bombTimer.rainbow, &config.misc.bombTimer.rainbowSpeed);
         ImGui::Checkbox("Quick reload", &config.misc.quickReload);
         ImGui::Checkbox("Prepare revolver", &config.misc.prepareRevolver);
         ImGui::SameLine();
