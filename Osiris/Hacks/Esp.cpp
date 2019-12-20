@@ -245,7 +245,7 @@ static void renderPlayerBox(Entity* entity, const Config::Esp::Player& config) n
                     else
                         interfaces.surface->setTextColor(config.name.color);
 
-                    interfaces.surface->setTextPosition(bbox.x0 + (fabsf(bbox.x1 - bbox.x0) - width) / 2, bbox.y0 - 5 - height);
+                    interfaces.surface->setTextPosition((bbox.x0 + bbox.x1 - width) / 2, bbox.y0 - 5 - height);
                     interfaces.surface->printText(name);
                 }
             }
@@ -260,7 +260,7 @@ static void renderPlayerBox(Entity* entity, const Config::Esp::Player& config) n
             else
                 interfaces.surface->setTextColor(config.activeWeapon.color);
 
-            interfaces.surface->setTextPosition(bbox.x0 + (bbox.x1 - bbox.x0 - width) * 0.5f, bbox.y1 + 5);
+            interfaces.surface->setTextPosition((bbox.x0 + bbox.x1 - width) / 2, bbox.y1 + 5);
             interfaces.surface->printText(name);
         }     
 
@@ -318,7 +318,7 @@ static void renderWeaponBox(Entity* entity, const Config::Esp::Weapon& config) n
             else
                 interfaces.surface->setTextColor(config.name.color);
 
-            interfaces.surface->setTextPosition(bbox.x0 + (bbox.x1 - bbox.x0 - width) * 0.5f, bbox.y1 + 5);
+            interfaces.surface->setTextPosition((bbox.x0 + bbox.x1 - width) / 2, bbox.y1 + 5);
             interfaces.surface->printText(name);
         }
 
@@ -348,7 +348,7 @@ static void renderEntityBox(Entity* entity, const Config::Esp::Shared& config, c
             else
                 interfaces.surface->setTextColor(config.name.color);
 
-            interfaces.surface->setTextPosition(bbox.x0 + (bbox.x1 - bbox.x0 - width) * 0.5f, bbox.y1 + 5);
+            interfaces.surface->setTextPosition((bbox.x0 + bbox.x1 - width) / 2, bbox.y1 + 5);
             interfaces.surface->printText(name);
         }
 
@@ -398,7 +398,10 @@ static constexpr bool isInRange(Entity* entity, float maxDistance) noexcept
 
 static constexpr bool renderPlayerEsp(Entity* entity, EspId id) noexcept
 {
-    if (config.esp.players[id].enabled && isInRange(entity, config.esp.players[id].maxDistance)) {
+    const auto localPlayer = interfaces.entityList->getEntity(interfaces.engine->getLocalPlayer());
+    if ((config.esp.players[id].enabled || 
+        config.esp.players[id].deadesp && !localPlayer->isAlive()) &&
+        isInRange(entity, config.esp.players[id].maxDistance)) {
         renderSnaplines(entity, config.esp.players[id]);
         renderEyeTraces(entity, config.esp.players[id]);
         renderPlayerBox(entity, config.esp.players[id]);
@@ -428,10 +431,15 @@ void Esp::render() noexcept
     if (interfaces.engine->isInGame()) {
         const auto localPlayer = interfaces.entityList->getEntity(interfaces.engine->getLocalPlayer());
 
+        if (!localPlayer)
+            return;
+
+        const auto observerTarget = localPlayer->getObserverTarget();
+
         for (int i = 1; i <= interfaces.engine->getMaxClients(); i++) {
             auto entity = interfaces.entityList->getEntity(i);
-            if (!entity || entity == localPlayer || entity->isDormant()
-                || !entity->isAlive())
+            if (!entity || entity == localPlayer || entity == observerTarget
+                || entity->isDormant() || !entity->isAlive())
                 continue;
 
             if (!entity->isEnemy()) {

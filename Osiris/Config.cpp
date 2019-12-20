@@ -366,7 +366,8 @@ void Config::load(size_t id) noexcept
             if (distanceJson.isMember("Rainbow")) distanceConfig.rainbow = distanceJson["Rainbow"].asBool();
             if (distanceJson.isMember("Rainbow speed")) distanceConfig.rainbowSpeed = distanceJson["Rainbow speed"].asFloat();
         }
-
+        
+        if (espJson.isMember("Dead ESP")) espConfig.deadesp = espJson["Dead ESP"].asBool();
         if (espJson.isMember("Max distance")) espConfig.maxDistance = espJson["Max distance"].asFloat();
     }
 
@@ -673,6 +674,8 @@ void Config::load(size_t id) noexcept
         if (visualsJson.isMember("World")) {
             const auto& worldJson = visualsJson["World"];
 
+            if (worldJson.isMember("Enabled")) visuals.world.enabled = worldJson["Enabled"].asBool();
+
             if (worldJson.isMember("Color")) {
                 visuals.world.color[0] = worldJson["Color"][0].asFloat();
                 visuals.world.color[1] = worldJson["Color"][1].asFloat();
@@ -680,6 +683,19 @@ void Config::load(size_t id) noexcept
             }
             if (worldJson.isMember("Rainbow")) visuals.world.rainbow = worldJson["Rainbow"].asBool();
             if (worldJson.isMember("Rainbow speed")) visuals.world.rainbowSpeed = worldJson["Rainbow speed"].asFloat();
+        }
+        if (visualsJson.isMember("Sky")) {
+            const auto& skyJson = visualsJson["Sky"];
+
+            if (skyJson.isMember("Enabled")) visuals.sky.enabled = skyJson["Enabled"].asBool();
+
+            if (skyJson.isMember("Color")) {
+                visuals.sky.color[0] = skyJson["Color"][0].asFloat();
+                visuals.sky.color[1] = skyJson["Color"][1].asFloat();
+                visuals.sky.color[2] = skyJson["Color"][2].asFloat();
+            }
+            if (skyJson.isMember("Rainbow")) visuals.sky.rainbow = skyJson["Rainbow"].asBool();
+            if (skyJson.isMember("Rainbow speed")) visuals.sky.rainbowSpeed = skyJson["Rainbow speed"].asFloat();
         }
         if (visualsJson.isMember("Deagle spinner")) visuals.deagleSpinner = visualsJson["Deagle spinner"].asBool();
         if (visualsJson.isMember("Screen effect")) visuals.screenEffect = visualsJson["Screen effect"].asInt();
@@ -782,6 +798,7 @@ void Config::load(size_t id) noexcept
         if (miscJson.isMember("Radar hack")) misc.radarHack = miscJson["Radar hack"].asBool();
         if (miscJson.isMember("Reveal ranks")) misc.revealRanks = miscJson["Reveal ranks"].asBool();
         if (miscJson.isMember("Reveal money")) misc.revealMoney = miscJson["Reveal money"].asBool();
+        if (miscJson.isMember("Reveal suspect")) misc.revealSuspect = miscJson["Reveal suspect"].asBool();
 
         if (const auto& spectatorList{ miscJson["Spectator list"] }; spectatorList.isObject()) {
             if (const auto& enabled{ spectatorList["Enabled"] }; enabled.isBool())
@@ -854,6 +871,7 @@ void Config::load(size_t id) noexcept
         if (miscJson.isMember("Grenade predict")) misc.nadePredict = miscJson["Grenade predict"].asBool();
         if (miscJson.isMember("Fix tablet signal")) misc.fixTabletSignal = miscJson["Fix tablet signal"].asBool();
         if (miscJson.isMember("Max angle delta")) misc.maxAngleDelta = miscJson["Max angle delta"].asFloat();
+        if (miscJson.isMember("Fake prime")) misc.fakePrime = miscJson["Fake prime"].asBool();
     }
 
     {
@@ -873,16 +891,6 @@ void Config::load(size_t id) noexcept
 
 void Config::save(size_t id) const noexcept
 {
-    if (!std::filesystem::is_directory(path)) {
-        std::filesystem::remove(path);
-        std::filesystem::create_directory(path);
-    }
-
-    std::ofstream out{ path / configs[id] };
-
-    if (!out.good())
-        return;
-
     Json::Value json;
 
     for (size_t i = 0; i < aimbot.size(); i++) {
@@ -1166,6 +1174,7 @@ void Config::save(size_t id) const noexcept
             distanceJson["Rainbow speed"] = distanceConfig.rainbowSpeed;
         }
 
+        espJson["Dead ESP"] = espConfig.deadesp;
         espJson["Max distance"] = espConfig.maxDistance;
     }
 
@@ -1413,11 +1422,22 @@ void Config::save(size_t id) const noexcept
 
         {
             auto& worldJson = visualsJson["World"];
+            worldJson["Enabled"] = visuals.world.enabled;
             worldJson["Color"][0] = visuals.world.color[0];
             worldJson["Color"][1] = visuals.world.color[1];
             worldJson["Color"][2] = visuals.world.color[2];
             worldJson["Rainbow"] = visuals.world.rainbow;
             worldJson["Rainbow speed"] = visuals.world.rainbowSpeed;
+        }
+
+        {
+            auto& skyJson = visualsJson["Sky"];
+            skyJson["Enabled"] = visuals.sky.enabled;
+            skyJson["Color"][0] = visuals.sky.color[0];
+            skyJson["Color"][1] = visuals.sky.color[1];
+            skyJson["Color"][2] = visuals.sky.color[2];
+            skyJson["Rainbow"] = visuals.sky.rainbow;
+            skyJson["Rainbow speed"] = visuals.sky.rainbowSpeed;
         }
 
         visualsJson["Deagle spinner"] = visuals.deagleSpinner;
@@ -1512,6 +1532,7 @@ void Config::save(size_t id) const noexcept
         miscJson["Radar hack"] = misc.radarHack;
         miscJson["Reveal ranks"] = misc.revealRanks;
         miscJson["Reveal money"] = misc.revealMoney;
+        miscJson["Reveal suspect"] = misc.revealSuspect;
 
         {
             auto& spectatorListJson = miscJson["Spectator list"];
@@ -1566,6 +1587,7 @@ void Config::save(size_t id) const noexcept
         miscJson["Grenade predict"] = misc.nadePredict;
         miscJson["Fix tablet signal"] = misc.fixTabletSignal;
         miscJson["Max angle delta"] = misc.maxAngleDelta;
+        miscJson["Fake prime"] = misc.fakePrime;
     }
 
     {
@@ -1582,8 +1604,13 @@ void Config::save(size_t id) const noexcept
         reportbotJson["Text abuse"] = reportbot.textAbuse;
     }
 
-    out << json;
-    out.close();
+    if (!std::filesystem::is_directory(path)) {
+        std::filesystem::remove(path);
+        std::filesystem::create_directory(path);
+    }
+
+    if (std::ofstream out{ path / configs[id] }; out.good())
+        out << json;
 }
 
 void Config::add(const char* name) noexcept

@@ -135,6 +135,7 @@ public:
             ColorToggle money;
             ColorToggle headDot;
             ColorToggle activeWeapon;
+            bool deadesp { false };
         };
 
         struct Weapon : public Shared { } weapon;
@@ -175,7 +176,8 @@ public:
         int flashReduction{ 0 };
         float brightness{ 0.0f };
         int skybox{ 0 };
-        Color world{ 0.0f, 0.0f, 0.0f };
+        ColorToggle world;
+        ColorToggle sky;
         bool deagleSpinner{ false };
         int screenEffect{ 0 };
         int hitMarker{ 0 };
@@ -221,6 +223,7 @@ public:
         bool radarHack{ false };
         bool revealRanks{ false };
         bool revealMoney{ false };
+        bool revealSuspect{ false };
         ColorToggle spectatorList;
         ColorToggle watermark;
         bool fixAnimationLOD{ false };
@@ -246,6 +249,7 @@ public:
         bool nadePredict{ false };
         bool fixTabletSignal{ false };
         float maxAngleDelta{ 255.0f };
+        bool fakePrime{ false };
     } misc;
 
     struct {
