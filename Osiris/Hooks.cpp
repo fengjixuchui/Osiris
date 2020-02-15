@@ -323,7 +323,7 @@ static void __stdcall setDrawColor(int r, int g, int b, int a) noexcept
     hooks.surface.callOriginal<void, 15>(r, g, b, a);
 }
 
-static bool __stdcall fireEventClientSide(GameEvent* event) noexcept
+static bool __stdcall fireEvent(GameEvent* event, bool serverOnly) noexcept
 {
     if (event) {
         switch (fnv::hashRuntime(event->getName())) {
@@ -338,7 +338,7 @@ static bool __stdcall fireEventClientSide(GameEvent* event) noexcept
             break;
         }
     }
-    return hooks.gameEventManager.callOriginal<bool, 9>(event);
+    return hooks.gameEventManager.callOriginal<bool, 8>(event, serverOnly);
 }
 
 struct ViewSetup {
@@ -366,17 +366,19 @@ struct RenderableInfo {
 
 static int __stdcall listLeavesInBox(const Vector& mins, const Vector& maxs, unsigned short* list, int listMax) noexcept
 {
-    if (config.misc.disableModelOcclusion && reinterpret_cast<uintptr_t>(_ReturnAddress()) == memory.listLeaves) {
-        if (auto info = *reinterpret_cast<RenderableInfo**>(reinterpret_cast<uintptr_t>(_AddressOfReturnAddress()) + 0x14); info&& info->renderable) {
-            if (auto ent = callVirtualMethod<Entity*>(info->renderable - 4, 7); ent&& ent->isPlayer()) {
+    if (std::uintptr_t(_ReturnAddress()) == memory.listLeaves) {
+        if (const auto info = *reinterpret_cast<RenderableInfo**>(std::uintptr_t(_AddressOfReturnAddress()) + 0x14); info && info->renderable) {
+            if (const auto ent = callVirtualMethod<Entity*>(info->renderable - 4, 7); ent && ent->isPlayer()) {
                 info->flags &= ~0x100;
                 info->flags2 |= 0xC0;
 
-                constexpr float maxCoord{ 16384.0f };
-                constexpr float minCoord{ -maxCoord };
-                constexpr Vector min{ minCoord, minCoord, minCoord };
-                constexpr Vector max{ maxCoord, maxCoord, maxCoord };
-                return hooks.bspQuery.callOriginal<int, 6>(std::cref(min), std::cref(max), list, listMax);
+                if (config.misc.disableModelOcclusion) {
+                    constexpr float maxCoord = 16384.0f;
+                    constexpr float minCoord = -maxCoord;
+                    constexpr Vector min{ minCoord, minCoord, minCoord };
+                    constexpr Vector max{ maxCoord, maxCoord, maxCoord };
+                    return hooks.bspQuery.callOriginal<int, 6>(std::cref(min), std::cref(max), list, listMax);
+                }
             }
         }
     }
@@ -485,7 +487,7 @@ Hooks::Hooks() noexcept
     engine.hookAt(82, isPlayingDemo);
     engine.hookAt(101, getScreenAspectRatio);
     engine.hookAt(218, getDemoPlaybackParameters);
-    gameEventManager.hookAt(9, fireEventClientSide);
+    gameEventManager.hookAt(8, fireEvent);
     modelRender.hookAt(21, drawModelExecute);
     panel.hookAt(41, paintTraverse);
     sound.hookAt(5, emitSound);
