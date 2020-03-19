@@ -10,6 +10,10 @@ public:
     {
         callVirtualMethod<void, float>(this, 4, value);
     }
+    constexpr auto setVectorValue(float r, float g, float b) noexcept
+    {
+        callVirtualMethod<void, float, float, float>(this, 11, r, g, b);
+    }
 };
 
 enum class MaterialVarFlag {
@@ -20,6 +24,11 @@ enum class MaterialVarFlag {
 
 class Material {
 public:
+    constexpr auto getName() noexcept
+    {
+        return callVirtualMethod<const char*>(this, 0);
+    }
+
     constexpr auto getTextureGroupName() noexcept
     {
         return callVirtualMethod<const char*>(this, 1);

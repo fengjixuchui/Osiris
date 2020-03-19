@@ -255,7 +255,6 @@ public:
         std::string killMessageString{ "Gotcha!" };
         bool nameStealer{ false };
         bool disablePanoramablur{ false };
-        std::string voteText;
         int banColor{ 6 };
         std::string banText{ "Cheater has been permanently banned from official CS:GO servers." };
         bool fastPlant{ false };
@@ -275,13 +274,14 @@ public:
 
     struct {
         bool enabled{ false };
-        int target{ 0 };
-        int delay{ 1 };
         bool textAbuse{ false };
         bool griefing{ false };
         bool wallhack{ true };
         bool aimbot{ true };
         bool other{ true };
+        int target{ 0 };
+        int delay{ 1 };
+        int rounds{ 1 };
     } reportbot;
 private:
     std::filesystem::path path;
