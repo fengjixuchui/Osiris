@@ -57,8 +57,6 @@ public:
     ViewRender* viewRender;
     uintptr_t drawScreenEffectMaterial;
     std::add_pointer_t<bool __stdcall(const char*, const char*)> submitReport;
-    uintptr_t test;
-    uintptr_t test2;
     uint8_t* fakePrime;
     std::add_pointer_t<void __cdecl(const char* msg, ...)> debugMsg;
     std::add_pointer_t<void __cdecl(const std::array<std::uint8_t, 4>& color, const char* msg, ...)> conColorMsg;
@@ -73,30 +71,32 @@ public:
     WeaponSystem* weaponSystem;
 
 private:
-    static std::uintptr_t findPattern(const wchar_t* module, const char* pattern, size_t offset = 0) noexcept
+    static std::uintptr_t findPattern(const wchar_t* module, const char* pattern) noexcept
     {
         static auto id = 0;
         ++id;
 
-        if (MODULEINFO moduleInfo; GetModuleInformation(GetCurrentProcess(), GetModuleHandleW(module), &moduleInfo, sizeof(moduleInfo))) {
-            auto start = static_cast<const char*>(moduleInfo.lpBaseOfDll);
-            const auto end = start + moduleInfo.SizeOfImage;
+        if (HMODULE moduleHandle = GetModuleHandleW(module)) {
+            if (MODULEINFO moduleInfo; GetModuleInformation(GetCurrentProcess(), moduleHandle, &moduleInfo, sizeof(moduleInfo))) {
+                auto start = static_cast<const char*>(moduleInfo.lpBaseOfDll);
+                const auto end = start + moduleInfo.SizeOfImage;
 
-            auto first = start;
-            auto second = pattern;
+                auto first = start;
+                auto second = pattern;
 
-            while (first < end && *second) {
-                if (*first == *second || *second == '?') {
-                    ++first;
-                    ++second;
-                } else {
-                    first = ++start;
-                    second = pattern;
+                while (first < end && *second) {
+                    if (*first == *second || *second == '?') {
+                        ++first;
+                        ++second;
+                    } else {
+                        first = ++start;
+                        second = pattern;
+                    }
                 }
-            }
 
-            if (!*second)
-                return reinterpret_cast<std::uintptr_t>(const_cast<char*>(start) + offset);
+                if (!*second)
+                    return reinterpret_cast<std::uintptr_t>(start);
+            }
         }
         MessageBoxA(NULL, ("Failed to find pattern #" + std::to_string(id) + '!').c_str(), "Osiris", MB_OK | MB_ICONWARNING);
         return 0;
