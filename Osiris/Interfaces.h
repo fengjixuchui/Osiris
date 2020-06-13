@@ -5,30 +5,8 @@
 #include <type_traits>
 #include <Windows.h>
 
-class Client;
-class Cvar;
-class Engine;
-class EngineTrace;
-class EntityList;
-class GameEventManager;
-class GameMovement;
-class GameUI;
-class InputSystem;
-class Localize;
-class MaterialSystem;
-class ModelInfo;
-class ModelRender;
-class Panel;
-class PhysicsSurfaceProps;
-class Prediction;
-class RenderView;
-class Surface;
-class Sound;
-class SoundEmitter;
-class StudioRender;
-
 #define GAME_INTERFACE(type, name, module, version) \
-type* name = reinterpret_cast<type*>(find(L##module, version));
+class type* name = reinterpret_cast<type*>(find(L##module, version));
 
 class Interfaces {
 public:
@@ -45,6 +23,7 @@ public:
     GAME_INTERFACE(MaterialSystem, materialSystem, "materialsystem", "VMaterialSystem080")
     GAME_INTERFACE(ModelInfo, modelInfo, "engine", "VModelInfoClient004")
     GAME_INTERFACE(ModelRender, modelRender, "engine", "VEngineModel016")
+    GAME_INTERFACE(NetworkStringTableContainer, networkStringTableContainer, "engine", "VEngineClientStringTable001")
     GAME_INTERFACE(Panel, panel, "vgui2", "VGUI_Panel009")
     GAME_INTERFACE(PhysicsSurfaceProps, physicsSurfaceProps, "vphysics", "VPhysicsSurfaceProps001")
     GAME_INTERFACE(Prediction, prediction, "client", "VClientPrediction001")
