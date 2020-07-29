@@ -7,6 +7,7 @@
 #include <Windows.h>
 
 #include "Hooks/MinHook.h"
+#include "Hooks/VmtHook.h"
 #include "Hooks/VmtSwap.h"
 
 struct SoundInfo;
@@ -29,7 +30,6 @@ public:
     HookType client;
     HookType clientMode;
     HookType engine;
-    HookType gameEventManager;
     HookType modelRender;
     HookType panel;
     HookType sound;
