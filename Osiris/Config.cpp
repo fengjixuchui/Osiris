@@ -215,7 +215,7 @@ static void from_json(const json& j, Snapline& s)
 
 static void from_json(const json& j, Box& b)
 {
-    from_json(j, static_cast<ColorToggleThicknessRounding&>(b));
+    from_json(j, static_cast<ColorToggleRounding&>(b));
 
     read(j, "Type", b.type);
     read(j, "Scale", b.scale);
@@ -270,6 +270,7 @@ static void from_json(const json& j, Player& p)
     read<value_t::object>(j, "Flash Duration", p.flashDuration);
     read(j, "Audible Only", p.audibleOnly);
     read(j, "Spotted Only", p.spottedOnly);
+    read(j, "Health Bar", p.healthBar);
     read<value_t::object>(j, "Skeleton", p.skeleton);
     read<value_t::object>(j, "Head Box", p.headBox);
 }
@@ -564,10 +565,11 @@ static void from_json(const json& j, Config::Misc& m)
     read(j, "Kill sound", m.killSound);
     read<value_t::object>(j, "Custom Kill Sound", m.customKillSound);
     read<value_t::object>(j, "Purchase List", m.purchaseList);
+    read<value_t::object>(j, "Reportbot", m.reportbot);
     read(j, "Opposite Hand Knife", m.oppositeHandKnife);
 }
 
-static void from_json(const json& j, Config::Reportbot& r)
+static void from_json(const json& j, Config::Misc::Reportbot& r)
 {
     read(j, "Enabled", r.enabled);
     read(j, "Target", r.target);
@@ -604,7 +606,6 @@ void Config::load(size_t id, bool incremental) noexcept
     read<value_t::object>(j, "Sound", sound);
     read<value_t::object>(j, "Style", style);
     read<value_t::object>(j, "Misc", misc);
-    read<value_t::object>(j, "Reportbot", reportbot);
 }
 
 // WRITE macro requires:
@@ -677,7 +678,7 @@ static void to_json(json& j, const Snapline& o, const Snapline& dummy = {})
 
 static void to_json(json& j, const Box& o, const Box& dummy = {})
 {
-    to_json(j, static_cast<const ColorToggleThicknessRounding&>(o), dummy);
+    to_json(j, static_cast<const ColorToggleRounding&>(o), dummy);
     WRITE("Type", type);
     WRITE("Scale", scale);
     WRITE("Fill", fill);
@@ -700,6 +701,7 @@ static void to_json(json& j, const Player& o, const Player& dummy = {})
     WRITE("Flash Duration", flashDuration);
     WRITE("Audible Only", audibleOnly);
     WRITE("Spotted Only", spottedOnly);
+    WRITE("Health Bar", healthBar);
     WRITE("Skeleton", skeleton);
     WRITE("Head Box", headBox);
 }
@@ -832,10 +834,8 @@ static void to_json(json& j, const Config::StreamProofESP& o)
     j["Other Entities"] = o.otherEntities;
 }
 
-static void to_json(json& j, const Config::Reportbot& o)
+static void to_json(json& j, const Config::Misc::Reportbot& o, const Config::Misc::Reportbot& dummy = {})
 {
-    const Config::Reportbot dummy;
-
     WRITE("Enabled", enabled);
     WRITE("Target", target);
     WRITE("Delay", delay);
@@ -935,6 +935,7 @@ static void to_json(json& j, const Config::Misc& o)
     WRITE("Kill sound", killSound);
     WRITE("Custom Kill Sound", customKillSound);
     WRITE("Purchase List", purchaseList);
+    WRITE("Reportbot", reportbot);
     WRITE("Opposite Hand Knife", oppositeHandKnife);
 }
 
@@ -1075,7 +1076,6 @@ void Config::save(size_t id) const noexcept
         j["Glow"] = glow;
         j["Chams"] = chams;
         j["ESP"] = streamProofESP;
-        j["Reportbot"] = reportbot;
         j["Sound"] = sound;
         j["Visuals"] = visuals;
         j["Misc"] = misc;
@@ -1122,7 +1122,6 @@ void Config::reset() noexcept
     sound = { };
     style = { };
     misc = { };
-    reportbot = { };
 }
 
 void Config::listConfigs() noexcept
