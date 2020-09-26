@@ -17,6 +17,7 @@ namespace Misc
     void watermark() noexcept;
     void prepareRevolver(UserCmd*) noexcept;
     void fastPlant(UserCmd*) noexcept;
+    void fastStop(UserCmd*) noexcept;
     void drawBombTimer() noexcept;
     void stealNames() noexcept;
     void disablePanoramablur() noexcept;
@@ -43,7 +44,7 @@ namespace Misc
     void killSound(GameEvent& event) noexcept;
     void purchaseList(GameEvent* event = nullptr) noexcept;
     void oppositeHandKnife(FrameStage stage) noexcept;
-
     void runReportbot() noexcept;
     void resetReportbot() noexcept;
+    void preserveKillfeed(bool roundStart = false) noexcept;
 }

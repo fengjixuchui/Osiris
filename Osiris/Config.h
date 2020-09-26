@@ -230,9 +230,11 @@ public:
         bool fixTabletSignal{ false };
         bool fakePrime{ false };
         bool fastPlant{ false };
+        bool fastStop{ false };
         bool quickReload{ false };
         bool prepareRevolver{ false };
         bool oppositeHandKnife = false;
+        PreserveKillfeed preserveKillfeed;
         char clanTag[16];
         int edgejumpkey{ 0 };
         int slowwalkKey{ 0 };
