@@ -36,8 +36,13 @@
 
 void Misc::edgejump(UserCmd* cmd) noexcept
 {
+#ifdef _WIN32
     if (!config->misc.edgejump || !GetAsyncKeyState(config->misc.edgejumpkey))
         return;
+#else
+    if (!config->misc.edgejump)
+        return;
+#endif
 
     if (!localPlayer || !localPlayer->isAlive())
         return;
@@ -51,8 +56,13 @@ void Misc::edgejump(UserCmd* cmd) noexcept
 
 void Misc::slowwalk(UserCmd* cmd) noexcept
 {
+#ifdef _WIN32
     if (!config->misc.slowwalk || !GetAsyncKeyState(config->misc.slowwalkKey))
         return;
+#else
+    if (!config->misc.slowwalk)
+        return;
+#endif
 
     if (!localPlayer || !localPlayer->isAlive())
         return;
@@ -105,7 +115,7 @@ void Misc::updateClanTag(bool tagChanged) noexcept
         const auto localTime = std::localtime(&time);
         char s[11];
         s[0] = '\0';
-        sprintf_s(s, "[%02d:%02d:%02d]", localTime->tm_hour, localTime->tm_min, localTime->tm_sec);
+        snprintf(s, sizeof(s), "[%02d:%02d:%02d]", localTime->tm_hour, localTime->tm_min, localTime->tm_sec);
         lastTime = memory->globalVars->realtime;
         memory->setClanTag(s, s);
     } else if (config->misc.customClanTag) {
@@ -151,12 +161,14 @@ void Misc::spectatorList() noexcept
         if (!interfaces->engine->getPlayerInfo(i, playerInfo))
             continue;
 
+#ifdef _WIN32
         if (wchar_t name[128]; MultiByteToWideChar(CP_UTF8, 0, playerInfo.name, -1, name, 128)) {
             const auto [textWidth, textHeight] = interfaces->surface->getTextSize(Surface::font, name);
             interfaces->surface->setTextPosition(width - textWidth - 5, textPositionY);
             textPositionY -= textHeight;
             interfaces->surface->printText(name);
         }
+#endif
     }
 }
 
@@ -273,7 +285,12 @@ void Misc::prepareRevolver(UserCmd* cmd) noexcept
     constexpr float revolverPrepareTime{ 0.234375f };
 
     static float readyTime;
-    if (config->misc.prepareRevolver && localPlayer && (!config->misc.prepareRevolverKey || GetAsyncKeyState(config->misc.prepareRevolverKey))) {
+    if (config->misc.prepareRevolver && localPlayer &&
+#ifdef _WIN32
+    (!config->misc.prepareRevolverKey || GetAsyncKeyState(config->misc.prepareRevolverKey))) {
+#else
+    true){
+#endif
         const auto activeWeapon = localPlayer->getActiveWeapon();
         if (activeWeapon && activeWeapon->itemDefinitionIndex2() == WeaponId::Revolver) {
             if (!readyTime) readyTime = memory->globalVars->serverTime() + revolverPrepareTime;
@@ -355,7 +372,8 @@ void Misc::drawBombTimer() noexcept
             interfaces->surface->setTextFont(font);
             interfaces->surface->setTextColor(255, 255, 255);
             auto drawPositionY{ interfaces->surface->getScreenSize().second / 8 };
-            auto bombText{ (std::wstringstream{ } << L"Bomb on " << (!entity->c4BombSite() ? 'A' : 'B') << L" : " << std::fixed << std::showpoint << std::setprecision(3) << (std::max)(entity->c4BlowTime() - memory->globalVars->currenttime, 0.0f) << L" s").str() };
+            std::wostringstream ss; ss << L"Bomb on " << (!entity->c4BombSite() ? 'A' : 'B') << L" : " << std::fixed << std::showpoint << std::setprecision(3) << (std::max)(entity->c4BlowTime() - memory->globalVars->currenttime, 0.0f) << L" s";
+            auto bombText{ ss.str() };
             const auto bombTextX{ interfaces->surface->getScreenSize().first / 2 - static_cast<int>((interfaces->surface->getTextSize(font, bombText.c_str())).first / 2) };
             interfaces->surface->setTextPosition(bombTextX, drawPositionY);
             drawPositionY += interfaces->surface->getTextSize(font, bombText.c_str()).second;
@@ -378,9 +396,14 @@ void Misc::drawBombTimer() noexcept
 
             if (entity->c4Defuser() != -1) {
                 if (PlayerInfo playerInfo; interfaces->engine->getPlayerInfo(interfaces->entityList->getEntityFromHandle(entity->c4Defuser())->index(), playerInfo)) {
-                    if (wchar_t name[128];  MultiByteToWideChar(CP_UTF8, 0, playerInfo.name, -1, name, 128)) {
+#ifdef _WIN32
+                    if (wchar_t name[128]; MultiByteToWideChar(CP_UTF8, 0, playerInfo.name, -1, name, 128)) {
+#else
+                    if (wchar_t name[128]; true) {
+#endif
                         drawPositionY += interfaces->surface->getTextSize(font, L" ").second;
-                        const auto defusingText{ (std::wstringstream{ } << name << L" is defusing: " << std::fixed << std::showpoint << std::setprecision(3) << (std::max)(entity->c4DefuseCountDown() - memory->globalVars->currenttime, 0.0f) << L" s").str() };
+                        std::wostringstream ss; ss << name << L" is defusing: " << std::fixed << std::showpoint << std::setprecision(3) << (std::max)(entity->c4DefuseCountDown() - memory->globalVars->currenttime, 0.0f) << L" s";
+                        const auto defusingText{ ss.str() };
 
                         interfaces->surface->setTextPosition((interfaces->surface->getScreenSize().first - interfaces->surface->getTextSize(font, defusingText.c_str()).first) / 2, drawPositionY);
                         interfaces->surface->printText(defusingText.c_str());
@@ -554,8 +577,10 @@ void Misc::quickHealthshot(UserCmd* cmd) noexcept
 
     static bool inProgress{ false };
 
+#ifdef _WIN32
     if (GetAsyncKeyState(config->misc.quickHealthshotKey) & 1)
         inProgress = true;
+#endif
 
     if (auto activeWeapon{ localPlayer->getActiveWeapon() }; activeWeapon && inProgress) {
         if (activeWeapon->getClientClass()->classId == ClassId::Healthshot && localPlayer->nextAttack() <= memory->globalVars->serverTime() && activeWeapon->nextPrimaryAttack() <= memory->globalVars->serverTime())
@@ -591,11 +616,13 @@ void Misc::fakePrime() noexcept
     if (config->misc.fakePrime != lastState) {
         lastState = config->misc.fakePrime;
 
+#ifdef _WIN32
         if (DWORD oldProtect; VirtualProtect(memory->fakePrime, 1, PAGE_EXECUTE_READWRITE, &oldProtect)) {
             constexpr uint8_t patch[]{ 0x74, 0xEB };
             *memory->fakePrime = patch[config->misc.fakePrime];
             VirtualProtect(memory->fakePrime, 1, oldProtect, nullptr);
         }
+#endif
     }
 }
 
@@ -667,7 +694,9 @@ void Misc::autoPistol(UserCmd* cmd) noexcept
 
 void Misc::chokePackets(bool& sendPacket) noexcept
 {
+#ifdef _WIN32
     if (!config->misc.chokedPacketsKey || GetAsyncKeyState(config->misc.chokedPacketsKey))
+#endif
         sendPacket = interfaces->engine->getNetworkChannel()->chokedPackets >= config->misc.chokedPackets;
 }
 
@@ -764,7 +793,12 @@ void Misc::purchaseList(GameEvent* event) noexcept
     static std::mutex mtx;
     std::scoped_lock _{ mtx };
 
-    static std::unordered_map<std::string, std::pair<std::vector<std::string>, int>> purchaseDetails;
+    struct PlayerPurchases {
+        int totalCost;
+        std::unordered_map<std::string, int> items;
+    };
+
+    static std::unordered_map<int, PlayerPurchases> playerPurchases;
     static std::unordered_map<std::string, int> purchaseTotal;
     static int totalCost;
 
@@ -777,21 +811,21 @@ void Misc::purchaseList(GameEvent* event) noexcept
 
             if (player && localPlayer && memory->isOtherEnemy(player, localPlayer.get())) {
                 if (const auto definition = memory->itemSystem()->getItemSchema()->getItemDefinitionByName(event->getString("weapon"))) {
-                    auto& purchase = purchaseDetails[player->getPlayerName()];
+                    auto& purchase = playerPurchases[player->handle()];
                     if (const auto weaponInfo = memory->weaponSystem->getWeaponInfo(definition->getWeaponId())) {
-                        purchase.second += weaponInfo->price;
+                        purchase.totalCost += weaponInfo->price;
                         totalCost += weaponInfo->price;
                     }
                     const std::string weapon = interfaces->localize->findAsUTF8(definition->getItemBaseName());
                     ++purchaseTotal[weapon];
-                    purchase.first.push_back(weapon);
+                    ++purchase.items[weapon];
                 }
             }
             break;
         }
         case fnv::hash("round_start"):
             freezeEnd = 0.0f;
-            purchaseDetails.clear();
+            playerPurchases.clear();
             purchaseTotal.clear();
             totalCost = 0;
             break;
@@ -805,7 +839,7 @@ void Misc::purchaseList(GameEvent* event) noexcept
 
         static const auto mp_buytime = interfaces->cvar->findVar("mp_buytime");
 
-        if ((!interfaces->engine->isInGame() || freezeEnd != 0.0f && memory->globalVars->realtime > freezeEnd + (!config->misc.purchaseList.onlyDuringFreezeTime ? mp_buytime->getFloat() : 0.0f) || purchaseDetails.empty() || purchaseTotal.empty()) && !gui->open)
+        if ((!interfaces->engine->isInGame() || freezeEnd != 0.0f && memory->globalVars->realtime > freezeEnd + (!config->misc.purchaseList.onlyDuringFreezeTime ? mp_buytime->getFloat() : 0.0f) || playerPurchases.empty() || purchaseTotal.empty()) && !gui->open)
             return;
 
         ImGui::SetNextWindowSize({ 200.0f, 200.0f }, ImGuiCond_Once);
@@ -821,15 +855,26 @@ void Misc::purchaseList(GameEvent* event) noexcept
         ImGui::PopStyleVar();
 
         if (config->misc.purchaseList.mode == PurchaseList::Details) {
-            for (const auto& [playerName, purchases] : purchaseDetails) {
-                std::string s = std::accumulate(purchases.first.begin(), purchases.first.end(), std::string{ }, [](std::string s, const std::string& piece) { return s += piece + ", "; });
+            GameData::Lock lock;
+
+            for (const auto& [handle, purchases] : playerPurchases) {
+                std::string s;
+                s.reserve(std::accumulate(purchases.items.begin(), purchases.items.end(), 0, [](int length, const auto& p) { return length + p.first.length() + 2; }));
+                for (const auto& purchasedItem : purchases.items) {
+                    if (purchasedItem.second > 1)
+                        s += std::to_string(purchasedItem.second) + "x ";
+                    s += purchasedItem.first + ", ";
+                }
+
                 if (s.length() >= 2)
                     s.erase(s.length() - 2);
 
-                if (config->misc.purchaseList.showPrices)
-                    ImGui::TextWrapped("%s $%d: %s", playerName.c_str(), purchases.second, s.c_str());
-                else
-                    ImGui::TextWrapped("%s: %s", playerName.c_str(), s.c_str());
+                if (const auto it = std::find_if(GameData::players().cbegin(), GameData::players().cend(), [handle = handle](const auto& playerData) { return playerData.handle == handle; }); it != GameData::players().cend()) {
+                    if (config->misc.purchaseList.showPrices)
+                        ImGui::TextWrapped("%s $%d: %s", it->name, purchases.totalCost, s.c_str());
+                    else
+                        ImGui::TextWrapped("%s: %s", it->name, s.c_str());
+                }
             }
         } else if (config->misc.purchaseList.mode == PurchaseList::Summary) {
             for (const auto& purchase : purchaseTotal)
@@ -967,5 +1012,33 @@ void Misc::preserveKillfeed(bool roundStart) noexcept
 
         if (child->hasClass("DeathNotice_Killer") && (!config->misc.preserveKillfeed.onlyHeadshots || child->hasClass("DeathNoticeHeadShot")))
             child->setAttributeFloat("SpawnTime", memory->globalVars->currenttime);
+    }
+}
+
+void Misc::drawOffscreenEnemies(ImDrawList* drawList) noexcept
+{
+    if (!config->misc.offscreenEnemies.enabled)
+        return;
+
+    GameData::Lock lock;
+
+    const auto yaw = degreesToRadians(interfaces->engine->getViewAngles().y);
+
+    for (auto& player : GameData::players()) {
+        if (player.dormant || !player.alive || !player.enemy || player.inViewFrustum)
+            continue;
+
+        const auto positionDiff = GameData::local().origin - player.origin;
+
+        auto x = std::cos(yaw) * positionDiff.y - std::sin(yaw) * positionDiff.x;
+        auto y = std::cos(yaw) * positionDiff.x + std::sin(yaw) * positionDiff.y;
+        const auto len = std::sqrt(x * x + y * y);
+        x /= len;
+        y /= len;
+
+        const auto pos = ImGui::GetIO().DisplaySize / 2 + ImVec2{ x, y } * 200;
+        const auto color = Helpers::calculateColor(config->misc.offscreenEnemies.color);
+        drawList->AddCircleFilled(pos, 11.0f, color & IM_COL32_A_MASK, 40);
+        drawList->AddCircleFilled(pos, 10.0f, color, 40);
     }
 }

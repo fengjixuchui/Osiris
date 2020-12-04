@@ -15,15 +15,37 @@ Vector Aimbot::calculateRelativeAngle(const Vector& source, const Vector& destin
     return ((destination - source).toAngle() - viewAngles).normalize();
 }
 
+static bool traceToExit(const Trace& enterTrace, const Vector& start, const Vector& direction, Vector& end, Trace& exitTrace)
+{
+    bool result = false;
+#ifdef _WIN32
+    const auto traceToExitFn = memory->traceToExit;
+    __asm {
+        push exitTrace
+        mov eax, direction
+        push [eax]Vector.z
+        push [eax]Vector.y
+        push [eax]Vector.x
+        mov eax, start
+        push [eax]Vector.z
+        push [eax]Vector.y
+        push [eax]Vector.x
+        mov edx, enterTrace
+        mov ecx, end
+        call traceToExitFn
+        add esp, 28
+        mov result, al
+    }
+#endif
+    return result;
+}
+
 static float handleBulletPenetration(SurfaceData* enterSurfaceData, const Trace& enterTrace, const Vector& direction, Vector& result, float penetration, float damage) noexcept
 {
     Vector end;
     Trace exitTrace;
-    __asm {
-        mov ecx, end
-        mov edx, enterTrace
-    }
-    if (!memory->traceToExit(enterTrace.endpos.x, enterTrace.endpos.y, enterTrace.endpos.z, direction.x, direction.y, direction.z, exitTrace))
+
+    if (!traceToExit(enterTrace, enterTrace.endpos, direction, end, exitTrace))
         return -1.0f;
 
     SurfaceData* exitSurfaceData = interfaces->physicsSurfaceProps->getSurfaceData(exitTrace.surface.surfaceProps);
@@ -124,12 +146,16 @@ void Aimbot::run(UserCmd* cmd) noexcept
 
     if (config->aimbot[weaponIndex].onKey) {
         if (!config->aimbot[weaponIndex].keyMode) {
+#ifdef _WIN32
             if (!GetAsyncKeyState(config->aimbot[weaponIndex].key))
                 return;
+#endif
         } else {
             static bool toggle = true;
+#ifdef _WIN32
             if (GetAsyncKeyState(config->aimbot[weaponIndex].key) & 1)
                 toggle = !toggle;
+#endif
             if (!toggle)
                 return;
         }
@@ -156,7 +182,7 @@ void Aimbot::run(UserCmd* cmd) noexcept
                 const auto bonePosition = entity->getBonePosition(config->aimbot[weaponIndex].bone > 1 ? 10 - config->aimbot[weaponIndex].bone : bone);
                 const auto angle = calculateRelativeAngle(localPlayerEyePosition, bonePosition, cmd->viewangles + aimPunch);
                 
-                const auto fov = std::hypotf(angle.x, angle.y);
+                const auto fov = std::hypot(angle.x, angle.y);
                 if (fov > bestFov)
                     continue;
 
