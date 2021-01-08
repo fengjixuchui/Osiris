@@ -59,6 +59,8 @@ Config::Config(const char* name) noexcept
     listConfigs();
     misc.clanTag[0] = '\0';
 
+    load(u8"default.json", false);
+
 #ifdef _WIN32
     LOGFONTW logfont;
     logfont.lfCharSet = ANSI_CHARSET;
@@ -118,6 +120,17 @@ static void read(const json& j, const char* key, KeyBind& o) noexcept
 
     if (const auto& val = j[key]; val.is_string())
         o = val.get<std::string>().c_str();
+}
+
+static void read(const json& j, const char* key, char* o, std::size_t size) noexcept
+{
+    if (!j.contains(key))
+        return;
+
+    if (const auto& val = j[key]; val.is_string()) {
+        std::strncpy(o, val.get<std::string>().c_str(), size);
+        o[size - 1] = '\0';
+    }
 }
 
 template <typename T, size_t Size>
@@ -327,8 +340,6 @@ static void from_json(const json& j, Config::Aimbot& a)
 static void from_json(const json& j, Config::Triggerbot& t)
 {
     read(j, "Enabled", t.enabled);
-    read(j, "On key", t.onKey);
-    read(j, "Key", t.key);
     read(j, "Friendly fire", t.friendlyFire);
     read(j, "Scoped only", t.scopedOnly);
     read(j, "Ignore flash", t.ignoreFlash);
@@ -385,6 +396,8 @@ static void from_json(const json& j, Config::Chams& c)
 
 static void from_json(const json& j, Config::StreamProofESP& e)
 {
+    read(j, "Toggle Key", e.toggleKey);
+    read(j, "Hold Key", e.holdKey);
     read(j, "Allies", e.allies);
     read(j, "Enemies", e.enemies);
     read(j, "Weapons", e.weapons);
@@ -449,36 +462,27 @@ static void from_json(const json& j, Config::Visuals& v)
 static void from_json(const json& j, sticker_setting& s)
 {
     read(j, "Kit", s.kit);
-    read(j, "Kit vector index", s.kit_vector_index);
     read(j, "Wear", s.wear);
     read(j, "Scale", s.scale);
     read(j, "Rotation", s.rotation);
+
+    s.onLoad();
 }
 
 static void from_json(const json& j, item_setting& i)
 {
     read(j, "Enabled", i.enabled);
     read(j, "Definition index", i.itemId);
-    read(j, "Definition vector index", i.itemIdIndex);
     read(j, "Quality", i.quality);
-    read(j, "Quality vector index", i.entity_quality_vector_index);
-
     read(j, "Paint Kit", i.paintKit);
-    read(j, "Paint Kit vector index", i.paint_kit_vector_index);
-
     read(j, "Definition override", i.definition_override_index);
-    read(j, "Definition override vector index", i.definition_override_vector_index);
-
     read(j, "Seed", i.seed);
     read(j, "StatTrak", i.stat_trak);
     read(j, "Wear", i.wear);
-
-#ifdef _WIN32
-    if (j.contains("Custom name"))
-        strncpy_s(i.custom_name, j["Custom name"].get<std::string>().c_str(), _TRUNCATE);
-#endif
-
+    read(j, "Custom name", i.custom_name, sizeof(i.custom_name));
     read(j, "Stickers", i.stickers);
+
+    i.onLoad();
 }
 
 static void from_json(const json& j, Config::Sound::Player& p)
@@ -541,10 +545,7 @@ static void from_json(const json& j, Config::Misc& m)
     read(j, "Bunny hop", m.bunnyHop);
     read(j, "Custom clan tag", m.customClanTag);
     read(j, "Clock tag", m.clocktag);
-#ifdef _WIN32
-    if (j.contains("Clan tag"))
-        strncpy_s(m.clanTag, j["Clan tag"].get<std::string>().c_str(), _TRUNCATE);
-#endif
+    read(j, "Clan tag", m.clanTag, sizeof(m.clanTag));
     read(j, "Animated clan tag", m.animatedClanTag);
     read(j, "Fast duck", m.fastDuck);
     read(j, "Moonwalk", m.moonwalk);
@@ -570,11 +571,11 @@ static void from_json(const json& j, Config::Misc& m)
     read(j, "Disable model occlusion", m.disableModelOcclusion);
     read(j, "Aspect Ratio", m.aspectratio);
     read(j, "Kill message", m.killMessage);
-    read<value_t::object>(j, "Kill message string", m.killMessageString);
+    read<value_t::string>(j, "Kill message string", m.killMessageString);
     read(j, "Name stealer", m.nameStealer);
     read(j, "Disable HUD blur", m.disablePanoramablur);
     read(j, "Ban color", m.banColor);
-    read<value_t::object>(j, "Ban text", m.banText);
+    read<value_t::string>(j, "Ban text", m.banText);
     read(j, "Fast plant", m.fastPlant);
     read(j, "Fast Stop", m.fastStop);
     read<value_t::object>(j, "Bomb timer", m.bombTimer);
@@ -590,9 +591,9 @@ static void from_json(const json& j, Config::Misc& m)
     read(j, "Max angle delta", m.maxAngleDelta);
     read(j, "Fake prime", m.fakePrime);
     read(j, "Fix tablet signal", m.fixTabletSignal);
-    read<value_t::object>(j, "Custom Hit Sound", m.customHitSound);
+    read<value_t::string>(j, "Custom Hit Sound", m.customHitSound);
     read(j, "Kill sound", m.killSound);
-    read<value_t::object>(j, "Custom Kill Sound", m.customKillSound);
+    read<value_t::string>(j, "Custom Kill Sound", m.customKillSound);
     read<value_t::object>(j, "Purchase List", m.purchaseList);
     read<value_t::object>(j, "Reportbot", m.reportbot);
     read(j, "Opposite Hand Knife", m.oppositeHandKnife);
@@ -614,12 +615,20 @@ static void from_json(const json& j, Config::Misc::Reportbot& r)
 
 void Config::load(size_t id, bool incremental) noexcept
 {
+    load((const char8_t*)configs[id].c_str(), incremental);
+}
+
+void Config::load(const char8_t* name, bool incremental) noexcept
+{
     json j;
 
-    if (std::ifstream in{ path / (const char8_t*)configs[id].c_str() }; in.good())
-        in >> j;
-    else
+    if (std::ifstream in{ path / name }; in.good()) {
+        j = json::parse(in, nullptr, false);
+        if (j.is_discarded())
+            return;
+    } else {
         return;
+    }
 
     if (!incremental)
         reset();
@@ -630,6 +639,8 @@ void Config::load(size_t id, bool incremental) noexcept
     read(j, "Aimbot Key mode", aimbotKeyMode);
 
     read(j, "Triggerbot", triggerbot);
+    read(j, "Triggerbot Key", triggerbotHoldKey);
+
     read<value_t::object>(j, "Backtrack", backtrack);
     read<value_t::object>(j, "Anti aim", antiAim);
     read(j, "Glow", glow);
@@ -805,8 +816,6 @@ static void to_json(json& j, const Config::Aimbot& o, const Config::Aimbot& dumm
 static void to_json(json& j, const Config::Triggerbot& o, const Config::Triggerbot& dummy = {})
 {
     WRITE("Enabled", enabled);
-    WRITE("On key", onKey);
-    WRITE("Key", key);
     WRITE("Friendly fire", friendlyFire);
     WRITE("Scoped only", scopedOnly);
     WRITE("Ignore flash", ignoreFlash);
@@ -863,6 +872,10 @@ static void to_json(json& j, const Config::Chams& o)
 
 static void to_json(json& j, const Config::StreamProofESP& o)
 {
+    if (o.toggleKey != KeyBind::NONE)
+        j["Toggle Key"] = o.toggleKey.toString();
+    if (o.holdKey != KeyBind::NONE)
+        j["Hold Key"] = o.holdKey.toString();
     j["Allies"] = o.allies;
     j["Enemies"] = o.enemies;
     j["Weapons"] = o.weapons;
@@ -1073,7 +1086,6 @@ static void to_json(json& j, const sticker_setting& o)
     const sticker_setting dummy;
 
     WRITE("Kit", kit);
-    WRITE("Kit vector index", kit_vector_index);
     WRITE("Wear", wear);
     WRITE("Scale", scale);
     WRITE("Rotation", rotation);
@@ -1085,13 +1097,9 @@ static void to_json(json& j, const item_setting& o)
 
     WRITE("Enabled", enabled);
     WRITE("Definition index", itemId);
-    WRITE("Definition vector index", itemIdIndex);
     WRITE("Quality", quality);
-    WRITE("Quality vector index", entity_quality_vector_index);
     WRITE("Paint Kit", paintKit);
-    WRITE("Paint Kit vector index", paint_kit_vector_index);
     WRITE("Definition override", definition_override_index);
-    WRITE("Definition override vector index", definition_override_vector_index);
     WRITE("Seed", seed);
     WRITE("StatTrak", stat_trak);
     WRITE("Wear", wear);
@@ -1122,10 +1130,12 @@ void Config::save(size_t id) const noexcept
 
         j["Aimbot"] = aimbot;
         j["Aimbot On key"] = aimbotOnKey;
-        j["Aimbot Key"] = aimbotKey;
+        to_json(j["Aimbot Key"], aimbotKey, KeyBind::NONE);
         j["Aimbot Key mode"] = aimbotKeyMode;
 
         j["Triggerbot"] = triggerbot;
+        to_json(j["Triggerbot Key"], triggerbotHoldKey, KeyBind::NONE);
+
         j["Backtrack"] = backtrack;
         j["Anti aim"] = antiAim;
         j["Glow"] = glow;

@@ -1,3 +1,4 @@
+﻿#include <array>
 #include <cwctype>
 #include <fstream>
 #include <functional>
@@ -9,6 +10,7 @@
 #endif
 
 #include "imgui/imgui.h"
+#include "imgui/imgui_internal.h"
 #include "imgui/imgui_impl_win32.h"
 #include "imgui/imgui_stdlib.h"
 
@@ -47,6 +49,15 @@ GUI::GUI() noexcept
         cfg.OversampleV = 3;
 
         fonts.tahoma = io.Fonts->AddFontFromFileTTF((path / "tahoma.ttf").string().c_str(), 15.0f, &cfg, Helpers::getFontGlyphRanges());
+
+        cfg.MergeMode = true;
+        static constexpr ImWchar symbol[]{
+            0x2605, 0x2605, // ★
+            0
+        };
+        io.Fonts->AddFontFromFileTTF((path / "seguisym.ttf").string().c_str(), 15.0f, &cfg, symbol);
+        cfg.MergeMode = false;
+
         fonts.segoeui = io.Fonts->AddFontFromFileTTF((path / "segoeui.ttf").string().c_str(), 15.0f, &cfg, Helpers::getFontGlyphRanges());
     }
 #endif
@@ -85,15 +96,27 @@ void GUI::updateColors() const noexcept
 
 #include "InputUtil.h"
 
-static void hotkey2(KeyBind& key) noexcept
+static void hotkey2(const char* label, KeyBind& key, float samelineOffset = 0.0f, const ImVec2& size = { 100.0f, 0.0f }) noexcept
 {
-    ImGui::Text("[ %s ]", key.toString());
+    const auto id = ImGui::GetID(label);
+    ImGui::PushID(label);
 
-    if (!ImGui::IsItemHovered())
-        return;
+    ImGui::TextUnformatted(label);
+    ImGui::SameLine(samelineOffset);
 
-    ImGui::SetTooltip("Press any key to change keybind");
-    key.setToPressedKey();
+    if (ImGui::GetActiveID() == id) {
+        ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetColorU32(ImGuiCol_ButtonActive));
+        ImGui::Button("...", size);
+        ImGui::PopStyleColor();
+
+        ImGui::GetCurrentContext()->ActiveIdAllowOverlap = true;
+        if ((!ImGui::IsItemHovered() && ImGui::GetIO().MouseClicked[0]) || key.setToPressedKey())
+            ImGui::ClearActiveID();
+    } else if (ImGui::Button(key.toString(), size)) {
+        ImGui::SetActiveID(id, ImGui::GetCurrentWindow());
+    }
+
+    ImGui::PopID();
 }
 
 void GUI::handleToggle() noexcept
@@ -108,7 +131,7 @@ void GUI::handleToggle() noexcept
     }
 }
 
-void GUI::hotkey(int& key) noexcept
+[[deprecated]] void GUI::hotkey(int& key) noexcept
 {
     key ? ImGui::Text("[ %s ]", interfaces->inputSystem->virtualKeyToString(key)) : ImGui::TextUnformatted("[ key ]");
 
@@ -167,6 +190,18 @@ void GUI::renderAimbotWindow(bool contentOnly) noexcept
         ImGui::SetNextWindowSize({ 600.0f, 0.0f });
         ImGui::Begin("Aimbot", &window.aimbot, windowFlags);
     }
+    ImGui::Checkbox("On key", &config->aimbotOnKey);
+    ImGui::SameLine();
+    ImGui::PushID("Aimbot Key");
+    hotkey2("", config->aimbotKey);
+    ImGui::PopID();
+    ImGui::SameLine();
+    ImGui::PushID(2);
+    ImGui::PushItemWidth(70.0f);
+    ImGui::Combo("", &config->aimbotKeyMode, "Hold\0Toggle\0");
+    ImGui::PopItemWidth();
+    ImGui::PopID();
+    ImGui::Separator();
     static int currentCategory{ 0 };
     ImGui::PushItemWidth(110.0f);
     ImGui::PushID(0);
@@ -257,18 +292,8 @@ void GUI::renderAimbotWindow(bool contentOnly) noexcept
     ImGui::PopID();
     ImGui::SameLine();
     ImGui::Checkbox("Enabled", &config->aimbot[currentWeapon].enabled);
-    ImGui::Separator();
     ImGui::Columns(2, nullptr, false);
     ImGui::SetColumnOffset(1, 220.0f);
-    ImGui::Checkbox("On key", &config->aimbotOnKey);
-    ImGui::SameLine();
-    hotkey(config->aimbotKey);
-    ImGui::SameLine();
-    ImGui::PushID(2);
-    ImGui::PushItemWidth(70.0f);
-    ImGui::Combo("", &config->aimbotKeyMode, "Hold\0Toggle\0");
-    ImGui::PopItemWidth();
-    ImGui::PopID();
     ImGui::Checkbox("Aimlock", &config->aimbot[currentWeapon].aimlock);
     ImGui::Checkbox("Silent", &config->aimbot[currentWeapon].silent);
     ImGui::Checkbox("Friendly fire", &config->aimbot[currentWeapon].friendlyFire);
@@ -414,9 +439,7 @@ void GUI::renderTriggerbotWindow(bool contentOnly) noexcept
     ImGui::SameLine();
     ImGui::Checkbox("Enabled", &config->triggerbot[currentWeapon].enabled);
     ImGui::Separator();
-    ImGui::Checkbox("On key", &config->triggerbot[currentWeapon].onKey);
-    ImGui::SameLine();
-    hotkey(config->triggerbot[currentWeapon].key);
+    hotkey2("Hold Key", config->triggerbotHoldKey);
     ImGui::Checkbox("Friendly fire", &config->triggerbot[currentWeapon].friendlyFire);
     ImGui::Checkbox("Scoped only", &config->triggerbot[currentWeapon].scopedOnly);
     ImGui::Checkbox("Ignore flash", &config->triggerbot[currentWeapon].ignoreFlash);
@@ -560,6 +583,10 @@ void GUI::renderStreamProofESPWindow(bool contentOnly) noexcept
         ImGui::SetNextWindowSize({ 0.0f, 0.0f });
         ImGui::Begin("ESP", &window.streamProofESP, windowFlags);
     }
+
+    hotkey2("Toggle Key", config->streamProofESP.toggleKey, 80.0f);
+    hotkey2("Hold Key", config->streamProofESP.holdKey, 80.0f);
+    ImGui::Separator();
 
     static std::size_t currentCategory;
     static auto currentItem = "All";
@@ -964,10 +991,14 @@ void GUI::renderVisualsWindow(bool contentOnly) noexcept
     ImGui::NextColumn();
     ImGui::Checkbox("Zoom", &config->visuals.zoom);
     ImGui::SameLine();
-    hotkey(config->visuals.zoomKey);
+    ImGui::PushID("Zoom Key");
+    hotkey2("", config->visuals.zoomKey);
+    ImGui::PopID();
     ImGui::Checkbox("Thirdperson", &config->visuals.thirdperson);
     ImGui::SameLine();
-    hotkey(config->visuals.thirdpersonKey);
+    ImGui::PushID("Thirdperson Key");
+    hotkey2("", config->visuals.thirdpersonKey);
+    ImGui::PopID();
     ImGui::PushItemWidth(290.0f);
     ImGui::PushID(0);
     ImGui::SliderInt("", &config->visuals.thirdpersonDistance, 0, 1000, "Thirdperson distance: %d");
@@ -1032,19 +1063,31 @@ void GUI::renderSkinChangerWindow(bool contentOnly) noexcept
         }
     }
 
-    SkinChanger::initializeKits();
-
     static auto itemIndex = 0;
 
     ImGui::PushItemWidth(110.0f);
     ImGui::Combo("##1", &itemIndex, [](void* data, int idx, const char** out_text) {
         *out_text = game_data::weapon_names[idx].name;
         return true;
-        }, nullptr, IM_ARRAYSIZE(game_data::weapon_names), 5);
+        }, nullptr, game_data::weapon_names.size(), 5);
     ImGui::PopItemWidth();
 
     auto& selected_entry = config->skinChanger[itemIndex];
     selected_entry.itemIdIndex = itemIndex;
+
+    constexpr auto rarityColor = [](int rarity) {
+        constexpr auto rarityColors = std::to_array<ImU32>({
+            IM_COL32(0,     0,   0,   0),
+            IM_COL32(176, 195, 217, 255),
+            IM_COL32( 94, 152, 217, 255),
+            IM_COL32( 75, 105, 255, 255),
+            IM_COL32(136,  71, 255, 255),
+            IM_COL32(211,  44, 230, 255),
+            IM_COL32(235,  75,  75, 255),
+            IM_COL32(228, 174,  57, 255)
+        });
+        return rarityColors[static_cast<std::size_t>(rarity) < rarityColors.size() ? rarity : 0];
+    };
 
     {
         ImGui::SameLine();
@@ -1056,46 +1099,55 @@ void GUI::renderSkinChangerWindow(bool contentOnly) noexcept
         selected_entry.stat_trak = (std::max)(selected_entry.stat_trak, -1);
         ImGui::SliderFloat("Wear", &selected_entry.wear, FLT_MIN, 1.f, "%.10f", ImGuiSliderFlags_Logarithmic);
 
-        static std::string filter;
-        ImGui::PushID("Search");
-        ImGui::InputTextWithHint("", "Search", &filter);
-        ImGui::PopID();
+        const auto& kits = itemIndex == 1 ? SkinChanger::getGloveKits() : SkinChanger::getSkinKits();
 
-        if (ImGui::ListBoxHeader("Paint Kit")) {
-            const auto& kits = itemIndex == 1 ? SkinChanger::getGloveKits() : SkinChanger::getSkinKits();
+        if (ImGui::BeginCombo("Paint Kit", kits[selected_entry.paint_kit_vector_index].name.c_str())) {
+            ImGui::PushID("Paint Kit");
+            ImGui::PushID("Search");
+            ImGui::SetNextItemWidth(-1.0f);
+            static std::array<std::string, game_data::weapon_names.size()> filters;
+            auto& filter = filters[itemIndex];
+            ImGui::InputTextWithHint("", "Search", &filter);
+            if (ImGui::IsItemHovered() || (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && !ImGui::IsAnyItemActive() && !ImGui::IsMouseClicked(0)))
+                ImGui::SetKeyboardFocusHere(-1);
+            ImGui::PopID();
 
-            std::wstring filterWide(filter.length(), L'\0');
-            const auto newLen = mbstowcs(filterWide.data(), filter.c_str(), filter.length());
-            if (newLen != static_cast<std::size_t>(-1))
-                filterWide.resize(newLen);
-            std::transform(filterWide.begin(), filterWide.end(), filterWide.begin(), [](wchar_t w) { return std::towupper(w); });
-
-            for (std::size_t i = 0; i < kits.size(); ++i) {
-                if (filter.empty() || wcsstr(kits[i].nameUpperCase.c_str(), filterWide.c_str())) {
-                    ImGui::PushID(i);
-                    if (ImGui::Selectable(kits[i].name.c_str(), i == selected_entry.paint_kit_vector_index))
-                        selected_entry.paint_kit_vector_index = i;
-                    ImGui::PopID();
+            const std::wstring filterWide = Helpers::toUpper(Helpers::toWideString(filter));
+            if (ImGui::BeginChild("##scrollarea", { 0, 6 * ImGui::GetTextLineHeightWithSpacing() })) {
+                for (std::size_t i = 0; i < kits.size(); ++i) {
+                    if (filter.empty() || wcsstr(kits[i].nameUpperCase.c_str(), filterWide.c_str())) {
+                        ImGui::PushID(i);
+                        const auto selected = i == selected_entry.paint_kit_vector_index;
+                        if (ImGui::SelectableWithBullet(kits[i].name.c_str(), rarityColor(kits[i].rarity), selected)) {
+                            selected_entry.paint_kit_vector_index = i;
+                            ImGui::CloseCurrentPopup();
+                        }
+                        if (selected && ImGui::IsWindowAppearing())
+                            ImGui::SetScrollHereY();
+                        ImGui::PopID();
+                    }
                 }
+                ImGui::EndChild();
             }
-            ImGui::ListBoxFooter();
+            ImGui::PopID();
+            ImGui::EndCombo();
         }
 
         ImGui::Combo("Quality", &selected_entry.entity_quality_vector_index, [](void* data, int idx, const char** out_text) {
-            *out_text = game_data::quality_names[idx].name;
+            *out_text = SkinChanger::getQualities()[idx].name.c_str(); // safe within this lamba
             return true;
-            }, nullptr, IM_ARRAYSIZE(game_data::quality_names), 5);
+            }, nullptr, SkinChanger::getQualities().size(), 5);
 
         if (itemIndex == 0) {
             ImGui::Combo("Knife", &selected_entry.definition_override_vector_index, [](void* data, int idx, const char** out_text) {
-                *out_text = game_data::knife_names[idx].name;
+                *out_text = SkinChanger::getKnifeTypes()[idx].name.c_str();
                 return true;
-                }, nullptr, IM_ARRAYSIZE(game_data::knife_names), 5);
+                }, nullptr, SkinChanger::getKnifeTypes().size(), 5);
         } else if (itemIndex == 1) {
             ImGui::Combo("Glove", &selected_entry.definition_override_vector_index, [](void* data, int idx, const char** out_text) {
-                *out_text = game_data::glove_names[idx].name;
+                *out_text = SkinChanger::getGloveTypes()[idx].name.c_str();
                 return true;
-                }, nullptr, IM_ARRAYSIZE(game_data::glove_names), 5);
+                }, nullptr, SkinChanger::getGloveTypes().size(), 5);
         } else {
             static auto unused_value = 0;
             selected_entry.definition_override_vector_index = 0;
@@ -1133,29 +1185,37 @@ void GUI::renderSkinChangerWindow(bool contentOnly) noexcept
 
         auto& selected_sticker = selected_entry.stickers[selectedStickerSlot];
 
-        static std::string filter;
-        ImGui::PushID("Search");
-        ImGui::InputTextWithHint("", "Search", &filter);
-        ImGui::PopID();
+        const auto& kits = SkinChanger::getStickerKits();
+        if (ImGui::BeginCombo("Sticker", kits[selected_sticker.kit_vector_index].name.c_str())) {
+            ImGui::PushID("Sticker");
+            ImGui::PushID("Search");
+            ImGui::SetNextItemWidth(-1.0f);
+            static std::array<std::string, game_data::weapon_names.size()> filters;
+            auto& filter = filters[itemIndex];
+            ImGui::InputTextWithHint("", "Search", &filter);
+            if (ImGui::IsItemHovered() || (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && !ImGui::IsAnyItemActive() && !ImGui::IsMouseClicked(0)))
+                ImGui::SetKeyboardFocusHere(-1);
+            ImGui::PopID();
 
-        if (ImGui::ListBoxHeader("Sticker")) {
-            const auto& kits = SkinChanger::getStickerKits();
-
-            std::wstring filterWide(filter.length(), L'\0');
-            const auto newLen = mbstowcs(filterWide.data(), filter.c_str(), filter.length());
-            if (newLen != static_cast<std::size_t>(-1))
-                filterWide.resize(newLen);
-            std::transform(filterWide.begin(), filterWide.end(), filterWide.begin(), [](wchar_t w) { return std::towupper(w); });
-
-            for (std::size_t i = 0; i < kits.size(); ++i) {
-                if (filter.empty() || wcsstr(kits[i].nameUpperCase.c_str(), filterWide.c_str())) {
-                    ImGui::PushID(i);
-                    if (ImGui::Selectable(kits[i].name.c_str(), i == selected_sticker.kit_vector_index))
-                        selected_sticker.kit_vector_index = i;
-                    ImGui::PopID();
+            const std::wstring filterWide = Helpers::toUpper(Helpers::toWideString(filter));
+            if (ImGui::BeginChild("##scrollarea", { 0, 6 * ImGui::GetTextLineHeightWithSpacing() })) {
+                for (std::size_t i = 0; i < kits.size(); ++i) {
+                    if (filter.empty() || wcsstr(kits[i].nameUpperCase.c_str(), filterWide.c_str())) {
+                        ImGui::PushID(i);
+                        const auto selected = i == selected_sticker.kit_vector_index;
+                        if (ImGui::SelectableWithBullet(kits[i].name.c_str(), rarityColor(kits[i].rarity), selected)) {
+                            selected_sticker.kit_vector_index = i;
+                            ImGui::CloseCurrentPopup();
+                        }
+                        if (selected && ImGui::IsWindowAppearing())
+                            ImGui::SetScrollHereY();
+                        ImGui::PopID();
+                    }
                 }
+                ImGui::EndChild();
             }
-            ImGui::ListBoxFooter();
+            ImGui::PopID();
+            ImGui::EndCombo();
         }
 
         ImGui::SliderFloat("Wear", &selected_sticker.wear, FLT_MIN, 1.0f, "%.10f", ImGuiSliderFlags_Logarithmic);
@@ -1241,9 +1301,7 @@ void GUI::renderMiscWindow(bool contentOnly) noexcept
     }
     ImGui::Columns(2, nullptr, false);
     ImGui::SetColumnOffset(1, 230.0f);
-    ImGui::TextUnformatted("Menu key");
-    ImGui::SameLine();
-    hotkey2(config->misc.menuKey);
+    hotkey2("Menu Key", config->misc.menuKey);
     ImGui::Checkbox("Anti AFK kick", &config->misc.antiAfkKick);
     ImGui::Checkbox("Auto strafe", &config->misc.autoStrafe);
     ImGui::Checkbox("Bunny hop", &config->misc.bunnyHop);
@@ -1251,10 +1309,14 @@ void GUI::renderMiscWindow(bool contentOnly) noexcept
     ImGui::Checkbox("Moonwalk", &config->misc.moonwalk);
     ImGui::Checkbox("Edge Jump", &config->misc.edgejump);
     ImGui::SameLine();
-    hotkey(config->misc.edgejumpkey);
+    ImGui::PushID("Edge Jump Key");
+    hotkey2("", config->misc.edgejumpkey);
+    ImGui::PopID();
     ImGui::Checkbox("Slowwalk", &config->misc.slowwalk);
     ImGui::SameLine();
-    hotkey(config->misc.slowwalkKey);
+    ImGui::PushID("Slowwalk Key");
+    hotkey2("", config->misc.slowwalkKey);
+    ImGui::PopID();
     ImGuiCustom::colorPicker("Noscope crosshair", config->misc.noscopeCrosshair);
     ImGuiCustom::colorPicker("Recoil crosshair", config->misc.recoilCrosshair);
     ImGui::Checkbox("Auto pistol", &config->misc.autoPistol);
@@ -1308,7 +1370,9 @@ void GUI::renderMiscWindow(bool contentOnly) noexcept
     ImGui::Checkbox("Quick reload", &config->misc.quickReload);
     ImGui::Checkbox("Prepare revolver", &config->misc.prepareRevolver);
     ImGui::SameLine();
-    hotkey(config->misc.prepareRevolverKey);
+    ImGui::PushID("Prepare revolver Key");
+    hotkey2("", config->misc.prepareRevolverKey);
+    ImGui::PopID();
     ImGui::Combo("Hit Sound", &config->misc.hitSound, "None\0Metal\0Gamesense\0Bell\0Glass\0Custom\0");
     if (config->misc.hitSound == 5) {
         ImGui::InputText("Hit Sound filename", &config->misc.customHitSound);
@@ -1327,10 +1391,14 @@ void GUI::renderMiscWindow(bool contentOnly) noexcept
     ImGui::InputInt("Choked packets", &config->misc.chokedPackets, 1, 5);
     config->misc.chokedPackets = std::clamp(config->misc.chokedPackets, 0, 64);
     ImGui::SameLine();
-    hotkey(config->misc.chokedPacketsKey);
+    ImGui::PushID("Choked packets Key");
+    hotkey2("", config->misc.chokedPacketsKey);
+    ImGui::PopID();
+    /*
     ImGui::Text("Quick healthshot");
     ImGui::SameLine();
     hotkey(config->misc.quickHealthshotKey);
+    */
     ImGui::Checkbox("Grenade Prediction", &config->misc.nadePredict);
     ImGui::Checkbox("Fix tablet signal", &config->misc.fixTabletSignal);
     ImGui::SetNextItemWidth(120.0f);

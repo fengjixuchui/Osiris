@@ -66,10 +66,10 @@ static LRESULT __stdcall wndProc(HWND window, UINT msg, WPARAM wParam, LPARAM lP
     [[maybe_unused]] static const auto once = [](HWND window) noexcept {
         netvars = std::make_unique<Netvars>();
         eventListener = std::make_unique<EventListener>();
-        config = std::make_unique<Config>("Osiris");
 
         ImGui::CreateContext();
         ImGui_ImplWin32_Init(window);
+        config = std::make_unique<Config>("Osiris");
         gui = std::make_unique<GUI>();
 
         hooks->install();
@@ -102,6 +102,13 @@ static HRESULT __stdcall present(IDirect3DDevice9* device, const RECT* src, cons
     Misc::recoilCrosshair(ImGui::GetBackgroundDrawList());
     Misc::drawOffscreenEnemies(ImGui::GetBackgroundDrawList());
     Misc::drawBombTimer();
+    Visuals::hitMarker(nullptr, ImGui::GetBackgroundDrawList());
+
+    Aimbot::updateInput();
+    Visuals::updateInput();
+    StreamProofESP::updateInput();
+    Misc::updateInput();
+    Triggerbot::updateInput();
 
     gui->handleToggle();
 
@@ -256,7 +263,6 @@ static void __STDCALL paintTraverse(unsigned int panel, bool forceRepaint, bool 
     if (interfaces->panel->getName(panel) == "MatSystemTopPanel") {
         Misc::spectatorList();
         Misc::watermark();
-        Visuals::hitMarker();
     }
     hooks->panel.callOriginal<void, 41>(panel, forceRepaint, allowForce);
 }
@@ -272,9 +278,7 @@ static void __STDCALL frameStageNotify(LINUX_ARGS(void* thisptr,) FrameStage sta
         GameData::update();
 
     if (stage == FrameStage::RENDER_START) {
-#ifdef _WIN32
         Misc::preserveKillfeed();
-#endif
         Misc::disablePanoramablur();
         Visuals::colorWorld();
         Misc::fakePrime();
@@ -538,6 +542,13 @@ static void swapWindow(SDL_Window* window) noexcept
         Misc::recoilCrosshair(ImGui::GetBackgroundDrawList());
         Misc::drawOffscreenEnemies(ImGui::GetBackgroundDrawList());
         Misc::drawBombTimer();
+        Visuals::hitMarker(nullptr, ImGui::GetBackgroundDrawList());
+
+        Aimbot::updateInput();
+        Visuals::updateInput();
+        StreamProofESP::updateInput();
+        Misc::updateInput();
+        Triggerbot::updateInput();
 
         gui->handleToggle();
 
@@ -700,9 +711,9 @@ static int pollEvent(SDL_Event* event) noexcept
     [[maybe_unused]] static const auto once = []() noexcept {
         netvars = std::make_unique<Netvars>();
         eventListener = std::make_unique<EventListener>();
-        config = std::make_unique<Config>("Osiris");
 
         ImGui::CreateContext();
+        config = std::make_unique<Config>("Osiris");
 
         gui = std::make_unique<GUI>();
 

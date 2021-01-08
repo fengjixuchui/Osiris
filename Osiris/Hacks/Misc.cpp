@@ -36,15 +36,12 @@
 
 #include "../imguiCustom.h"
 
+static bool edgejumpActive;
+
 void Misc::edgejump(UserCmd* cmd) noexcept
 {
-#ifdef _WIN32
-    if (!config->misc.edgejump || !GetAsyncKeyState(config->misc.edgejumpkey))
+    if (!config->misc.edgejump || !edgejumpActive)
         return;
-#else
-    if (!config->misc.edgejump)
-        return;
-#endif
 
     if (!localPlayer || !localPlayer->isAlive())
         return;
@@ -56,15 +53,12 @@ void Misc::edgejump(UserCmd* cmd) noexcept
         cmd->buttons |= UserCmd::IN_JUMP;
 }
 
+static bool slowwalkActive;
+
 void Misc::slowwalk(UserCmd* cmd) noexcept
 {
-#ifdef _WIN32
-    if (!config->misc.slowwalk || !GetAsyncKeyState(config->misc.slowwalkKey))
+    if (!config->misc.slowwalk || !slowwalkActive)
         return;
-#else
-    if (!config->misc.slowwalk)
-        return;
-#endif
 
     if (!localPlayer || !localPlayer->isAlive())
         return;
@@ -281,18 +275,15 @@ void Misc::watermark() noexcept
     }
 }
 
+static bool prepareRevolverActive;
+
 void Misc::prepareRevolver(UserCmd* cmd) noexcept
 {
     constexpr auto timeToTicks = [](float time) {  return static_cast<int>(0.5f + time / memory->globalVars->intervalPerTick); };
     constexpr float revolverPrepareTime{ 0.234375f };
 
     static float readyTime;
-    if (config->misc.prepareRevolver && localPlayer &&
-#ifdef _WIN32
-    (!config->misc.prepareRevolverKey || GetAsyncKeyState(config->misc.prepareRevolverKey))) {
-#else
-    true){
-#endif
+    if (config->misc.prepareRevolver && localPlayer && prepareRevolverActive) {
         const auto activeWeapon = localPlayer->getActiveWeapon();
         if (activeWeapon && activeWeapon->itemDefinitionIndex2() == WeaponId::Revolver) {
             if (!readyTime) readyTime = memory->globalVars->serverTime() + revolverPrepareTime;
@@ -407,7 +398,7 @@ void Misc::drawBombTimer() noexcept
                 ImGui::textUnformattedCentered("You can not defuse!");
             }
             ImGui::PopStyleColor();
-        } else if (const auto defusingPlayer = std::find_if(GameData::players().cbegin(), GameData::players().cend(), [handle = plantedC4.defuserHandle](const auto& playerData) { return playerData.handle == handle; }); defusingPlayer != GameData::players().cend()) {
+        } else if (const auto defusingPlayer = GameData::playerByHandle(plantedC4.defuserHandle)) {
             std::ostringstream ss; ss << defusingPlayer->name << " is defusing: " << std::fixed << std::showpoint << std::setprecision(3) << (std::max)(plantedC4.defuseCountDown - memory->globalVars->currenttime, 0.0f) << " s";
 
             ImGui::textUnformattedCentered(ss.str().c_str());
@@ -681,11 +672,11 @@ void Misc::autoPistol(UserCmd* cmd) noexcept
     }
 }
 
+static bool chokePacketsActive;
+
 void Misc::chokePackets(bool& sendPacket) noexcept
 {
-#ifdef _WIN32
-    if (!config->misc.chokedPacketsKey || GetAsyncKeyState(config->misc.chokedPacketsKey))
-#endif
+    if (chokePacketsActive)
         sendPacket = interfaces->engine->getNetworkChannel()->chokedPackets >= config->misc.chokedPackets;
 }
 
@@ -858,11 +849,11 @@ void Misc::purchaseList(GameEvent* event) noexcept
                 if (s.length() >= 2)
                     s.erase(s.length() - 2);
 
-                if (const auto it = std::find_if(GameData::players().cbegin(), GameData::players().cend(), [handle = handle](const auto& playerData) { return playerData.handle == handle; }); it != GameData::players().cend()) {
+                if (const auto player = GameData::playerByHandle(handle)) {
                     if (config->misc.purchaseList.showPrices)
-                        ImGui::TextWrapped("%s $%d: %s", it->name, purchases.totalCost, s.c_str());
+                        ImGui::TextWrapped("%s $%d: %s", player->name, purchases.totalCost, s.c_str());
                     else
-                        ImGui::TextWrapped("%s: %s", it->name, s.c_str());
+                        ImGui::TextWrapped("%s: %s", player->name, s.c_str());
                 }
             }
         } else if (config->misc.purchaseList.mode == PurchaseList::Summary) {
@@ -987,11 +978,12 @@ void Misc::preserveKillfeed(bool roundStart) noexcept
 
     nextUpdate = memory->globalVars->realtime + 2.0f;
 
-    const auto deathNotice = memory->findHudElement(memory->hud, "CCSGO_HudDeathNotice");
+    const auto deathNotice = std::uintptr_t(memory->findHudElement(memory->hud, "CCSGO_HudDeathNotice"));
     if (!deathNotice)
         return;
 
-    const auto deathNoticePanel = (*(UIPanel**)(*(deathNotice - 5 + 22) + 4));
+    const auto deathNoticePanel = (*(UIPanel**)(*reinterpret_cast<std::uintptr_t*>(deathNotice WIN32_LINUX(-20 + 88, -32 + 128)) + sizeof(std::uintptr_t)));
+
     const auto childPanelCount = deathNoticePanel->getChildCount();
 
     for (int i = 0; i < childPanelCount; ++i) {
@@ -1030,4 +1022,12 @@ void Misc::drawOffscreenEnemies(ImDrawList* drawList) noexcept
         drawList->AddCircleFilled(pos, 11.0f, color & IM_COL32_A_MASK, 40);
         drawList->AddCircleFilled(pos, 10.0f, color, 40);
     }
+}
+
+void Misc::updateInput() noexcept
+{
+    edgejumpActive = config->misc.edgejumpkey.isDown();
+    slowwalkActive = config->misc.slowwalkKey.isDown();
+    prepareRevolverActive = config->misc.prepareRevolverKey == KeyBind::NONE || config->misc.prepareRevolverKey.isDown();
+    chokePacketsActive = config->misc.chokedPacketsKey == KeyBind::NONE || config->misc.chokedPacketsKey.isDown();
 }

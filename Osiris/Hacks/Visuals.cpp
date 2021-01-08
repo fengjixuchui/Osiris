@@ -1,6 +1,10 @@
 #include <array>
 #include <cstring>
 
+#include "../imgui/imgui.h"
+#define IMGUI_DEFINE_MATH_OPERATORS
+#include "../imgui/imgui_internal.h"
+
 #include "../fnv.h"
 #include "../Helpers.h"
 #include "Visuals.h"
@@ -169,22 +173,15 @@ void Visuals::modifySmoke(FrameStage stage) noexcept
     }
 }
 
+static bool isInThirdperson = true;
+
 void Visuals::thirdperson() noexcept
 {
-    static bool isInThirdperson{ true };
-    static float lastTime{ 0.0f };
+    if (!config->visuals.thirdperson)
+        return;
 
-#ifdef _WIN32
-    if (GetAsyncKeyState(config->visuals.thirdpersonKey) && memory->globalVars->realtime - lastTime > 0.5f) {
-        isInThirdperson = !isInThirdperson;
-        lastTime = memory->globalVars->realtime;
-    }
-#endif
-
-    if (config->visuals.thirdperson)
-        if (memory->input->isCameraInThirdPerson = (!config->visuals.thirdpersonKey || isInThirdperson)
-            && localPlayer && localPlayer->isAlive())
-            memory->input->cameraOffset.z = static_cast<float>(config->visuals.thirdpersonDistance);
+    memory->input->isCameraInThirdPerson = isInThirdperson && localPlayer && localPlayer->isAlive();
+    memory->input->cameraOffset.z = static_cast<float>(config->visuals.thirdpersonDistance); 
 }
 
 void Visuals::removeVisualRecoil(FrameStage stage) noexcept
@@ -259,18 +256,13 @@ void Visuals::removeShadows() noexcept
     shadows->setValue(!config->visuals.noShadows);
 }
 
+static bool zoomToggled = false;
+
 void Visuals::applyZoom(FrameStage stage) noexcept
 {
     if (config->visuals.zoom && localPlayer) {
         if (stage == FrameStage::RENDER_START && (localPlayer->fov() == 90 || localPlayer->fovStart() == 90)) {
-            static bool scoped{ false };
-
-#ifdef _WIN32
-            if (GetAsyncKeyState(config->visuals.zoomKey) & 1)
-                scoped = !scoped;
-#endif
-
-            if (scoped) {
+            if (zoomToggled) {
                 localPlayer->fov() = 40;
                 localPlayer->fovStart() = 40;
             }
@@ -371,15 +363,16 @@ void Visuals::hitEffect(GameEvent* event) noexcept
     }
 }
 
-void Visuals::hitMarker(GameEvent* event) noexcept
+void Visuals::hitMarker(GameEvent* event, ImDrawList* drawList) noexcept
 {
-    if (config->visuals.hitMarker == 0 || !localPlayer)
+    if (config->visuals.hitMarker == 0)
         return;
 
     static float lastHitTime = 0.0f;
 
-    if (event && interfaces->engine->getPlayerForUserID(event->getInt("attacker")) == localPlayer->index()) {
-        lastHitTime = memory->globalVars->realtime;
+    if (event) {
+        if (localPlayer && event->getInt("attacker") == localPlayer->getUserId())
+            lastHitTime = memory->globalVars->realtime;
         return;
     }
 
@@ -388,16 +381,12 @@ void Visuals::hitMarker(GameEvent* event) noexcept
 
     switch (config->visuals.hitMarker) {
     case 1:
-        const auto [width, height] = interfaces->surface->getScreenSize();
-
-        const auto width_mid = width / 2;
-        const auto height_mid = height / 2;
-
-        interfaces->surface->setDrawColor(255, 255, 255, 255);
-        interfaces->surface->drawLine(width_mid + 10, height_mid + 10, width_mid + 4, height_mid + 4);
-        interfaces->surface->drawLine(width_mid - 10, height_mid + 10, width_mid - 4, height_mid + 4);
-        interfaces->surface->drawLine(width_mid + 10, height_mid - 10, width_mid + 4, height_mid - 4);
-        interfaces->surface->drawLine(width_mid - 10, height_mid - 10, width_mid - 4, height_mid - 4);
+        const auto& mid = ImGui::GetIO().DisplaySize / 2.0f;
+        constexpr auto color = IM_COL32(255, 255, 255, 255);
+        drawList->AddLine({ mid.x - 10, mid.y - 10 }, { mid.x - 4, mid.y - 4 }, color);
+        drawList->AddLine({ mid.x + 10.5f, mid.y - 10.5f }, { mid.x + 4.5f, mid.y - 4.5f }, color);
+        drawList->AddLine({ mid.x + 10.5f, mid.y + 10.5f }, { mid.x + 4.5f, mid.y + 4.5f }, color);
+        drawList->AddLine({ mid.x - 10, mid.y + 10 }, { mid.x - 4, mid.y + 4 }, color);
         break;
     }
 }
@@ -444,4 +433,15 @@ void Visuals::skybox(FrameStage stage) noexcept
         static const auto sv_skyname = interfaces->cvar->findVar("sv_skyname");
         memory->loadSky(sv_skyname->string);
     }
+}
+
+void Visuals::updateInput() noexcept
+{
+    if (config->visuals.thirdpersonKey.isPressed())
+        isInThirdperson = !isInThirdperson;
+    else if (config->visuals.thirdpersonKey == KeyBind::NONE)
+        isInThirdperson = true;
+
+    if (config->visuals.zoomKey.isPressed())
+        zoomToggled = !zoomToggled;
 }
