@@ -1,4 +1,4 @@
-﻿#include <mutex>
+#include <mutex>
 #include <numeric>
 #include <sstream>
 
@@ -120,7 +120,7 @@ void Misc::updateClanTag(bool tagChanged) noexcept
 
         if (config->misc.animatedClanTag && !clanTag.empty()) {
             const auto offset = Helpers::utf8SeqLen(clanTag[0]);
-            if (offset != -1)
+            if (offset != -1 && static_cast<std::size_t>(offset) <= clanTag.length())
                 std::rotate(clanTag.begin(), clanTag.begin() + offset, clanTag.end());
         }
         lastTime = memory->globalVars->realtime;
@@ -170,8 +170,6 @@ void Misc::spectatorList() noexcept
 
 static void drawCrosshair(ImDrawList* drawList, const ImVec2& pos, ImU32 color, float thickness) noexcept
 {
-    drawList->Flags &= ~ImDrawListFlags_AntiAliasedLines;
-
     // dot
     drawList->AddRectFilled(pos - ImVec2{ 1, 1 }, pos + ImVec2{ 2, 2 }, color & IM_COL32_A_MASK);
     drawList->AddRectFilled(pos, pos + ImVec2{ 1, 1 }, color);
@@ -191,8 +189,6 @@ static void drawCrosshair(ImDrawList* drawList, const ImVec2& pos, ImU32 color, 
     // bottom (right with swapped x/y offsets)
     drawList->AddRectFilled(ImVec2{ pos.x - 1, pos.y + 4 }, ImVec2{ pos.x + 2, pos.y + 12 }, color & IM_COL32_A_MASK);
     drawList->AddRectFilled(ImVec2{ pos.x, pos.y + 5 }, ImVec2{ pos.x + 1, pos.y + 11 }, color);
-
-    drawList->Flags |= ImDrawListFlags_AntiAliasedLines;
 }
 
 void Misc::noscopeCrosshair(ImDrawList* drawList) noexcept
@@ -548,37 +544,6 @@ void Misc::nadePredict() noexcept
 
     nadeVar->onChangeCallbacks.size = 0;
     nadeVar->setValue(config->misc.nadePredict);
-}
-
-void Misc::quickHealthshot(UserCmd* cmd) noexcept
-{
-    if (!localPlayer)
-        return;
-
-    static bool inProgress{ false };
-
-#ifdef _WIN32
-    if (GetAsyncKeyState(config->misc.quickHealthshotKey) & 1)
-        inProgress = true;
-#endif
-
-    if (auto activeWeapon{ localPlayer->getActiveWeapon() }; activeWeapon && inProgress) {
-        if (activeWeapon->getClientClass()->classId == ClassId::Healthshot && localPlayer->nextAttack() <= memory->globalVars->serverTime() && activeWeapon->nextPrimaryAttack() <= memory->globalVars->serverTime())
-            cmd->buttons |= UserCmd::IN_ATTACK;
-        else {
-            for (auto weaponHandle : localPlayer->weapons()) {
-                if (weaponHandle == -1)
-                    break;
-
-                if (const auto weapon{ interfaces->entityList->getEntityFromHandle(weaponHandle) }; weapon && weapon->getClientClass()->classId == ClassId::Healthshot) {
-                    cmd->weaponselect = weapon->index();
-                    cmd->weaponsubtype = weapon->getWeaponSubType();
-                    return;
-                }
-            }
-        }
-        inProgress = false;
-    }
 }
 
 void Misc::fixTabletSignal() noexcept
@@ -1013,15 +978,36 @@ void Misc::drawOffscreenEnemies(ImDrawList* drawList) noexcept
 
         auto x = std::cos(yaw) * positionDiff.y - std::sin(yaw) * positionDiff.x;
         auto y = std::cos(yaw) * positionDiff.x + std::sin(yaw) * positionDiff.y;
-        const auto len = std::sqrt(x * x + y * y);
-        x /= len;
-        y /= len;
-
+        if (const auto len = std::sqrt(x * x + y * y); len != 0.0f) {
+            x /= len;
+            y /= len;
+        }
         const auto pos = ImGui::GetIO().DisplaySize / 2 + ImVec2{ x, y } * 200;
         const auto color = Helpers::calculateColor(config->misc.offscreenEnemies.color);
         drawList->AddCircleFilled(pos, 11.0f, color & IM_COL32_A_MASK, 40);
         drawList->AddCircleFilled(pos, 10.0f, color, 40);
     }
+}
+
+void Misc::autoAccept(const char* soundEntry) noexcept
+{
+    if (!config->misc.autoAccept)
+        return;
+
+    if (std::strcmp(soundEntry, "UIPanorama.popup_accept_match_beep"))
+        return;
+
+    if (const auto idx = memory->registeredPanoramaEvents->find(memory->makePanoramaSymbol("MatchAssistedAccept")); idx != -1) {
+        if (const auto eventPtr = memory->registeredPanoramaEvents->memory[idx].value.makeEvent(nullptr))
+            interfaces->panoramaUIEngine->accessUIEngine()->dispatchEvent(eventPtr);
+    }
+
+#ifdef _WIN32
+    auto window = FindWindowW(L"Valve001", NULL);
+    FLASHWINFO flash{ sizeof(FLASHWINFO), window, FLASHW_TRAY | FLASHW_TIMERNOFG, 0, 0 };
+    FlashWindowEx(&flash);
+    ShowWindow(window, SW_RESTORE);
+#endif
 }
 
 void Misc::updateInput() noexcept
