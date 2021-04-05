@@ -15,6 +15,7 @@
 #include "Misc.h"
 
 #include "../SDK/Client.h"
+#include "../SDK/ClientMode.h"
 #include "../SDK/ConVar.h"
 #include "../SDK/Entity.h"
 #include "../SDK/FrameStage.h"
@@ -167,7 +168,7 @@ void Misc::spectatorList() noexcept
             continue;
 
         if (const auto it = std::ranges::find(GameData::players(), observer.playerHandle, &PlayerData::handle); it != GameData::players().cend()) {
-            ImGui::TextWrapped("%s", it->name);
+            ImGui::TextWrapped("%s", it->name.c_str());
         }
     }
 
@@ -247,34 +248,21 @@ void Misc::recoilCrosshair(ImDrawList* drawList) noexcept
 
 void Misc::watermark() noexcept
 {
-    if (config->misc.watermark.enabled) {
-        interfaces->surface->setTextFont(Surface::font);
+    if (!config->misc.watermark.enabled)
+        return;
 
-        if (config->misc.watermark.rainbow)
-            interfaces->surface->setTextColor(rainbowColor(config->misc.watermark.rainbowSpeed));
-        else
-            interfaces->surface->setTextColor(config->misc.watermark.color);
+    ImGuiWindowFlags windowFlags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize;
+    if (!gui->isOpen())
+        windowFlags |= ImGuiWindowFlags_NoInputs;
 
-        interfaces->surface->setTextPosition(5, 0);
-        interfaces->surface->printText(L"Osiris");
+    ImGui::SetNextWindowBgAlpha(0.3f);
+    ImGui::Begin("Watermark", nullptr, windowFlags);
 
-        static auto frameRate = 1.0f;
-        frameRate = 0.9f * frameRate + 0.1f * memory->globalVars->absoluteFrameTime;
-        const auto [screenWidth, screenHeight] = interfaces->surface->getScreenSize();
-        std::wstring fps{ std::to_wstring(static_cast<int>(1 / frameRate)) + L" fps" };
-        const auto [fpsWidth, fpsHeight] = interfaces->surface->getTextSize(Surface::font, fps.c_str());
-        interfaces->surface->setTextPosition(screenWidth - fpsWidth - 5, 0);
-        interfaces->surface->printText(fps.c_str());
+    static auto frameRate = 1.0f;
+    frameRate = 0.9f * frameRate + 0.1f * memory->globalVars->absoluteFrameTime;
 
-        float latency = 0.0f;
-        if (auto networkChannel = interfaces->engine->getNetworkChannel(); networkChannel && networkChannel->getLatency(0) > 0.0f)
-            latency = networkChannel->getLatency(0);
-
-        std::wstring ping{ L"PING: " + std::to_wstring(static_cast<int>(latency * 1000)) + L" ms" };
-        const auto pingWidth = interfaces->surface->getTextSize(Surface::font, ping.c_str()).first;
-        interfaces->surface->setTextPosition(screenWidth - pingWidth - 5, fpsHeight);
-        interfaces->surface->printText(ping.c_str());
-    }
+    ImGui::Text("Osiris | %d fps | %d ms", frameRate != 0.0f ? static_cast<int>(1 / frameRate) : 0, GameData::getNetOutgoingLatency());
+    ImGui::End();
 }
 
 void Misc::prepareRevolver(UserCmd* cmd) noexcept
@@ -818,9 +806,9 @@ void Misc::purchaseList(GameEvent* event) noexcept
 
                 if (const auto player = GameData::playerByHandle(handle)) {
                     if (config->misc.purchaseList.showPrices)
-                        ImGui::TextWrapped("%s $%d: %s", player->name, purchases.totalCost, s.c_str());
+                        ImGui::TextWrapped("%s $%d: %s", player->name.c_str(), purchases.totalCost, s.c_str());
                     else
-                        ImGui::TextWrapped("%s: %s", player->name, s.c_str());
+                        ImGui::TextWrapped("%s: %s", player->name.c_str(), s.c_str());
                 }
             }
         } else if (config->misc.purchaseList.mode == PurchaseList::Summary) {
@@ -963,15 +951,30 @@ void Misc::preserveKillfeed(bool roundStart) noexcept
     }
 }
 
+void Misc::voteRevealer(GameEvent& event) noexcept
+{
+    if (!config->misc.revealVotes)
+        return;
+
+    const auto entity = interfaces->entityList->getEntity(event.getInt("entityid"));
+    if (!entity || !entity->isPlayer())
+        return;
+    
+    const auto votedYes = event.getInt("vote_option") == 0;
+    const auto isLocal = localPlayer && entity == localPlayer.get();
+    const char color = votedYes ? '\x06' : '\x07';
+
+    memory->clientMode->getHudChat()->printf(0, " \x0C\u2022Osiris\u2022 %c%s\x01 voted %c%s\x01", isLocal ? '\x01' : color, isLocal ? "You" : entity->getPlayerName().c_str(), color, votedYes ? "Yes" : "No");
+}
+
 void Misc::drawOffscreenEnemies(ImDrawList* drawList) noexcept
 {
     if (!config->misc.offscreenEnemies.enabled)
         return;
 
-    GameData::Lock lock;
-
     const auto yaw = degreesToRadians(interfaces->engine->getViewAngles().y);
 
+    GameData::Lock lock;
     for (auto& player : GameData::players()) {
         if (player.dormant || !player.alive || !player.enemy || player.inViewFrustum)
             continue;
@@ -984,10 +987,38 @@ void Misc::drawOffscreenEnemies(ImDrawList* drawList) noexcept
             x /= len;
             y /= len;
         }
+
+        constexpr auto avatarRadius = 13.0f;
+        constexpr auto triangleSize = 10.0f;
+
         const auto pos = ImGui::GetIO().DisplaySize / 2 + ImVec2{ x, y } * 200;
+        const auto trianglePos = pos + ImVec2{ x, y } * (avatarRadius + 3);
+
+        const auto white = Helpers::calculateColor(255, 255, 255, 255);
         const auto color = Helpers::calculateColor(config->misc.offscreenEnemies.color);
-        drawList->AddCircleFilled(pos, 11.0f, color & IM_COL32_A_MASK, 40);
-        drawList->AddCircleFilled(pos, 10.0f, color, 40);
+
+        const ImVec2 trianglePoints[]{
+            trianglePos + ImVec2{  0.4f * y, -0.4f * x } * triangleSize,
+            trianglePos + ImVec2{  1.0f * x,  1.0f * y } * triangleSize,
+            trianglePos + ImVec2{ -0.4f * y,  0.4f * x } * triangleSize
+        };
+        drawList->AddConvexPolyFilled(trianglePoints, 3, color);
+
+        drawList->AddCircleFilled(pos, avatarRadius + 1, white & IM_COL32_A_MASK, 40);
+
+        const auto texture = player.getAvatarTexture();
+
+        const bool pushTextureId = drawList->_TextureIdStack.empty() || texture != drawList->_TextureIdStack.back();
+        if (pushTextureId)
+            drawList->PushTextureID(texture);
+
+        const int vertStartIdx = drawList->VtxBuffer.Size;
+        drawList->AddCircleFilled(pos, avatarRadius, white, 40);
+        const int vertEndIdx = drawList->VtxBuffer.Size;
+        ImGui::ShadeVertsLinearUV(drawList, vertStartIdx, vertEndIdx, pos - ImVec2{ avatarRadius, avatarRadius }, pos + ImVec2{ avatarRadius, avatarRadius }, { 0, 0 }, { 1, 1 }, true);
+
+        if (pushTextureId)
+            drawList->PopTextureID();
     }
 }
 
@@ -1010,6 +1041,42 @@ void Misc::autoAccept(const char* soundEntry) noexcept
     FlashWindowEx(&flash);
     ShowWindow(window, SW_RESTORE);
 #endif
+}
+
+void Misc::deathmatchGod() noexcept
+{
+    if (!config->misc.deathmatchGod || !localPlayer->isAlive() || !localPlayer->gunGameImmunity())
+        return;
+
+    static auto gameType{ interfaces->cvar->findVar("game_type") };
+    static auto gameMode{ interfaces->cvar->findVar("game_mode") };
+    if (gameType->getInt() != 1 || gameMode->getInt() != 2)
+        return;
+
+    static auto nextTime = 0.0f;
+    if (nextTime <= memory->globalVars->realtime) {
+        interfaces->engine->clientCmdUnrestricted("open_buymenu");
+        nextTime = memory->globalVars->realtime + 0.25f;
+    }
+}
+
+void Misc::updateEventListeners(bool forceRemove) noexcept
+{
+    class PurchaseEventListener : public GameEventListener {
+    public:
+        void fireGameEvent(GameEvent* event) { purchaseList(event); }
+    };
+
+    static PurchaseEventListener listener;
+    static bool listenerRegistered = false;
+
+    if (config->misc.purchaseList.enabled && !listenerRegistered) {
+        interfaces->gameEventManager->addListener(&listener, "item_purchase");
+        listenerRegistered = true;
+    } else if ((!config->misc.purchaseList.enabled || forceRemove) && listenerRegistered) {
+        interfaces->gameEventManager->removeListener(&listener);
+        listenerRegistered = false;
+    }
 }
 
 void Misc::updateInput() noexcept

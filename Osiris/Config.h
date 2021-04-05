@@ -198,6 +198,7 @@ public:
         bool revealRanks{ false };
         bool revealMoney{ false };
         bool revealSuspect{ false };
+        bool revealVotes{ false };
         bool fixAnimationLOD{ false };
         bool fixBoneMatrix{ false };
         bool fixMovement{ false };
@@ -213,6 +214,7 @@ public:
         bool quickReload{ false };
         bool prepareRevolver{ false };
         bool oppositeHandKnife = false;
+        bool deathmatchGod = false;
         PreserveKillfeed preserveKillfeed;
         char clanTag[16];
         KeyBind edgejumpkey = KeyBind::NONE;
@@ -228,7 +230,10 @@ public:
         };
 
         SpectatorList spectatorList;
-        ColorToggle3 watermark;
+        struct Watermark {
+            bool enabled = false;
+        };
+        Watermark watermark;
         float aspectratio{ 0 };
         std::string killMessageString{ "Gotcha!" };
         int banColor{ 6 };

@@ -28,9 +28,27 @@
 #include "Hacks/Glow.h"
 #include "Hacks/AntiAim.h"
 #include "Hacks/Backtrack.h"
+#include "Hacks/Sound.h"
 
 constexpr auto windowFlags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize
 | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
+
+static ImFont* addFontFromVFONT(const std::string& path, float size, const ImWchar* glyphRanges, bool merge) noexcept
+{
+    auto file = Helpers::loadBinaryFile(path);
+    if (!Helpers::decodeVFONT(file))
+        return nullptr;
+
+    ImFontConfig cfg;
+    cfg.FontData = file.data();
+    cfg.FontDataSize = file.size();
+    cfg.FontDataOwnedByAtlas = false;
+    cfg.MergeMode = merge;
+    cfg.GlyphRanges = glyphRanges;
+    cfg.SizePixels = size;
+
+    return ImGui::GetIO().Fonts->AddFont(&cfg);
+}
 
 GUI::GUI() noexcept
 {
@@ -44,15 +62,17 @@ GUI::GUI() noexcept
     io.LogFilename = nullptr;
     io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
 
+    ImFontConfig cfg;
+    cfg.SizePixels = 15.0f;
+
 #ifdef _WIN32
     if (PWSTR pathToFonts; SUCCEEDED(SHGetKnownFolderPath(FOLDERID_Fonts, 0, nullptr, &pathToFonts))) {
         const std::filesystem::path path{ pathToFonts };
         CoTaskMemFree(pathToFonts);
 
-        ImFontConfig cfg;
-        cfg.OversampleV = 3;
-
-        fonts.tahoma = io.Fonts->AddFontFromFileTTF((path / "tahoma.ttf").string().c_str(), 15.0f, &cfg, Helpers::getFontGlyphRanges());
+        fonts.normal15px = io.Fonts->AddFontFromFileTTF((path / "tahoma.ttf").string().c_str(), 15.0f, &cfg, Helpers::getFontGlyphRanges());
+        if (!fonts.normal15px)
+            io.Fonts->AddFontDefault(&cfg);
 
         cfg.MergeMode = true;
         static constexpr ImWchar symbol[]{
@@ -61,10 +81,14 @@ GUI::GUI() noexcept
         };
         io.Fonts->AddFontFromFileTTF((path / "seguisym.ttf").string().c_str(), 15.0f, &cfg, symbol);
         cfg.MergeMode = false;
-
-        fonts.segoeui = io.Fonts->AddFontFromFileTTF((path / "segoeui.ttf").string().c_str(), 15.0f, &cfg, Helpers::getFontGlyphRanges());
     }
+#else
+    fonts.normal15px = addFontFromVFONT("csgo/panorama/fonts/notosans-regular.vfont", 15.0f, Helpers::getFontGlyphRanges(), false);
 #endif
+    if (!fonts.normal15px)
+        io.Fonts->AddFontDefault(&cfg);
+    addFontFromVFONT("csgo/panorama/fonts/notosanskr-regular.vfont", 15.0f, io.Fonts->GetGlyphRangesKorean(), true);
+    addFontFromVFONT("csgo/panorama/fonts/notosanssc-regular.vfont", 15.0f, io.Fonts->GetGlyphRangesChineseFull(), true);
 }
 
 void GUI::render() noexcept
@@ -80,7 +104,7 @@ void GUI::render() noexcept
         renderStreamProofESPWindow();
         renderVisualsWindow();
         renderSkinChangerWindow();
-        renderSoundWindow();
+        Sound::drawGUI(false);
         renderStyleWindow();
         renderMiscWindow();
         renderConfigWindow();
@@ -156,7 +180,7 @@ void GUI::renderMenuBar() noexcept
         menuBarItem("ESP", window.streamProofESP);
         menuBarItem("Visuals", window.visuals);
         menuBarItem("Skin changer", window.skinChanger);
-        menuBarItem("Sound", window.sound);
+        Sound::menuBarItem();
         menuBarItem("Style", window.style);
         menuBarItem("Misc", window.misc);
         menuBarItem("Config", window.config);
@@ -518,7 +542,7 @@ void GUI::renderStreamProofESPWindow(bool contentOnly) noexcept
         }
     };
 
-    if (ImGui::ListBoxHeader("##list", { 170.0f, 300.0f })) {
+    if (ImGui::BeginListBox("##list", { 170.0f, 300.0f })) {
         constexpr std::array categories{ "Enemies", "Allies", "Weapons", "Projectiles", "Loot Crates", "Other Entities" };
 
         for (std::size_t i = 0; i < categories.size(); ++i) {
@@ -735,7 +759,7 @@ void GUI::renderStreamProofESPWindow(bool contentOnly) noexcept
             ImGui::Unindent();
             ImGui::PopID();
         }
-        ImGui::ListBoxFooter();
+        ImGui::EndListBox();
     }
 
     ImGui::SameLine();
@@ -1097,8 +1121,11 @@ void GUI::renderSkinChangerWindow(bool contentOnly) noexcept
         static std::size_t selectedStickerSlot = 0;
 
         ImGui::PushItemWidth(-1);
+        ImVec2 size;
+        size.x = 0.0f;
+        size.y = ImGui::GetTextLineHeightWithSpacing() * 5.25f + ImGui::GetStyle().FramePadding.y * 2.0f;
 
-        if (ImGui::ListBoxHeader("", 5)) {
+        if (ImGui::BeginListBox("", size)) {
             for (int i = 0; i < 5; ++i) {
                 ImGui::PushID(i);
 
@@ -1110,7 +1137,7 @@ void GUI::renderSkinChangerWindow(bool contentOnly) noexcept
 
                 ImGui::PopID();
             }
-            ImGui::ListBoxFooter();
+            ImGui::EndListBox();
         }
 
         ImGui::PopItemWidth();
@@ -1265,6 +1292,8 @@ void GUI::renderMiscWindow(bool contentOnly) noexcept
     ImGui::Checkbox("Reveal ranks", &config->misc.revealRanks);
     ImGui::Checkbox("Reveal money", &config->misc.revealMoney);
     ImGui::Checkbox("Reveal suspect", &config->misc.revealSuspect);
+    ImGui::Checkbox("Reveal votes", &config->misc.revealVotes);
+    ImGui::Checkbox("Deathmatch godmode", &config->misc.deathmatchGod);
 
     ImGui::Checkbox("Spectator list", &config->misc.spectatorList.enabled);
     ImGui::SameLine();
@@ -1279,7 +1308,7 @@ void GUI::renderMiscWindow(bool contentOnly) noexcept
     }
     ImGui::PopID();
 
-    ImGuiCustom::colorPicker("Watermark", config->misc.watermark);
+    ImGui::Checkbox("Watermark", &config->misc.watermark.enabled);
     ImGuiCustom::colorPicker("Offscreen Enemies", config->misc.offscreenEnemies.color, &config->misc.offscreenEnemies.enabled);
     ImGui::Checkbox("Fix animation LOD", &config->misc.fixAnimationLOD);
     ImGui::Checkbox("Fix bone matrix", &config->misc.fixBoneMatrix);
@@ -1563,10 +1592,7 @@ void GUI::renderGuiStyle2() noexcept
             renderSkinChangerWindow(true);
             ImGui::EndTabItem();
         }
-        if (ImGui::BeginTabItem("Sound")) {
-            renderSoundWindow(true);
-            ImGui::EndTabItem();
-        }
+        Sound::tabItem();
         if (ImGui::BeginTabItem("Style")) {
             renderStyleWindow(true);
             ImGui::EndTabItem();

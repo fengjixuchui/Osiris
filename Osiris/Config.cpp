@@ -1,6 +1,8 @@
 #include <fstream>
 
 #ifdef _WIN32
+#include <Windows.h>
+#include <shellapi.h>
 #include <ShlObj.h>
 #endif
 
@@ -420,6 +422,11 @@ static void from_json(const json& j, Config::Misc::SpectatorList& sl)
     read<value_t::object>(j, "Size", sl.size);
 }
 
+static void from_json(const json& j, Config::Misc::Watermark& o)
+{
+    read(j, "Enabled", o.enabled);
+}
+
 static void from_json(const json& j, PreserveKillfeed& o)
 {
     read(j, "Enabled", o.enabled);
@@ -451,6 +458,7 @@ static void from_json(const json& j, Config::Misc& m)
     read(j, "Reveal ranks", m.revealRanks);
     read(j, "Reveal money", m.revealMoney);
     read(j, "Reveal suspect", m.revealSuspect);
+    read(j, "Reveal votes", m.revealVotes);
     read<value_t::object>(j, "Spectator list", m.spectatorList);
     read<value_t::object>(j, "Watermark", m.watermark);
     read<value_t::object>(j, "Offscreen Enemies", m.offscreenEnemies);
@@ -487,6 +495,7 @@ static void from_json(const json& j, Config::Misc& m)
     read<value_t::object>(j, "Reportbot", m.reportbot);
     read(j, "Opposite Hand Knife", m.oppositeHandKnife);
     read<value_t::object>(j, "Preserve Killfeed", m.preserveKillfeed);
+    read(j, "Deathmatch godmode", m.deathmatchGod);
 }
 
 static void from_json(const json& j, Config::Misc::Reportbot& r)
@@ -786,6 +795,11 @@ static void to_json(json& j, const Config::Misc::SpectatorList& o, const Config:
     }
 }
 
+static void to_json(json& j, const Config::Misc::Watermark& o, const Config::Misc::Watermark& dummy = {})
+{
+    WRITE("Enabled", enabled);
+}
+
 static void to_json(json& j, const PreserveKillfeed& o, const PreserveKillfeed& dummy = {})
 {
     WRITE("Enabled", enabled);
@@ -822,6 +836,7 @@ static void to_json(json& j, const Config::Misc& o)
     WRITE("Reveal ranks", revealRanks);
     WRITE("Reveal money", revealMoney);
     WRITE("Reveal suspect", revealSuspect);
+    WRITE("Reveal votes", revealVotes);
     WRITE("Spectator list", spectatorList);
     WRITE("Watermark", watermark);
     WRITE("Offscreen Enemies", offscreenEnemies);
@@ -858,6 +873,7 @@ static void to_json(json& j, const Config::Misc& o)
     WRITE("Reportbot", reportbot);
     WRITE("Opposite Hand Knife", oppositeHandKnife);
     WRITE("Preserve Killfeed", preserveKillfeed);
+    WRITE("Deathmatch godmode", deathmatchGod);
 }
 
 static void to_json(json& j, const Config::Visuals::ColorCorrection& o, const Config::Visuals::ColorCorrection& dummy)
@@ -1069,7 +1085,11 @@ void Config::createConfigDir() const noexcept
 void Config::openConfigDir() const noexcept
 {
     createConfigDir();
-    int ret = std::system((WIN32_LINUX("start ", "xdg-open ") + path.string()).c_str());
+#ifdef _WIN32
+    ShellExecuteW(nullptr, L"open", path.wstring().c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+#else
+    int ret = std::system(("xdg-open " + path.string()).c_str());
+#endif
 }
 
 void Config::scheduleFontLoad(const std::string& name) noexcept

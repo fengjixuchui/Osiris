@@ -40,6 +40,7 @@
 #include "Hacks/Glow.h"
 #include "Hacks/Misc.h"
 #include "Hacks/SkinChanger.h"
+#include "Hacks/Sound.h"
 #include "Hacks/Triggerbot.h"
 #include "Hacks/Visuals.h"
 
@@ -108,6 +109,7 @@ static HRESULT __stdcall present(IDirect3DDevice9* device, const RECT* src, cons
     Misc::spectatorList();
     Visuals::hitMarker(nullptr, ImGui::GetBackgroundDrawList());
     Visuals::drawMolotovHull(ImGui::GetBackgroundDrawList());
+    Misc::watermark();
 
     Aimbot::updateInput();
     Visuals::updateInput();
@@ -130,6 +132,8 @@ static HRESULT __stdcall present(IDirect3DDevice9* device, const RECT* src, cons
         device->EndScene();
     }
 
+    GameData::clearUnusedAvatars();
+
     return hooks->originalPresent(device, src, dest, windowOverride, dirtyRegion);
 }
 
@@ -137,6 +141,7 @@ static HRESULT __stdcall reset(IDirect3DDevice9* device, D3DPRESENT_PARAMETERS* 
 {
     ImGui_ImplDX9_InvalidateDeviceObjects();
     SkinChanger::clearItemIconTextures();
+    GameData::clearTextures();
     return hooks->originalReset(device, params);
 }
 
@@ -176,14 +181,13 @@ static bool __STDCALL createMove(LINUX_ARGS(void* thisptr,) float inputSampleTim
     Misc::updateClanTag();
     Misc::fakeBan();
     Misc::stealNames();
+    Misc::deathmatchGod();
     Misc::revealRanks(cmd);
     Misc::quickReload(cmd);
     Misc::fixTabletSignal();
     Misc::slowwalk(cmd);
 
-#ifdef _WIN32
     EnginePrediction::run(cmd);
-#endif
 
     Aimbot::run(cmd);
     Triggerbot::run(cmd);
@@ -265,14 +269,6 @@ static bool __FASTCALL svCheatsGetBool(void* _this) noexcept
     return hooks->svCheats.getOriginal<bool, IS_WIN32() ? 13 : 16>()(_this);
 }
 
-static void __STDCALL paintTraverse(unsigned int panel, bool forceRepaint, bool allowForce) noexcept
-{
-    if (interfaces->panel->getName(panel) == "MatSystemTopPanel") {
-        Misc::watermark();
-    }
-    hooks->panel.callOriginal<void, 41>(panel, forceRepaint, allowForce);
-}
-
 static void __STDCALL frameStageNotify(LINUX_ARGS(void* thisptr,) FrameStage stage) noexcept
 {
     [[maybe_unused]] static auto backtrackInit = (Backtrack::init(), false);
@@ -288,6 +284,8 @@ static void __STDCALL frameStageNotify(LINUX_ARGS(void* thisptr,) FrameStage sta
         Misc::disablePanoramablur();
         Visuals::colorWorld();
         Misc::fakePrime();
+        Misc::updateEventListeners();
+        Visuals::updateEventListeners();
     }
     if (interfaces->engine->isInGame()) {
         Visuals::skybox(stage);
@@ -308,23 +306,7 @@ static void __STDCALL frameStageNotify(LINUX_ARGS(void* thisptr,) FrameStage sta
 
 static void __STDCALL emitSound(LINUX_ARGS(void* thisptr,) void* filter, int entityIndex, int channel, const char* soundEntry, unsigned int soundEntryHash, const char* sample, float volume, int seed, int soundLevel, int flags, int pitch, const Vector& origin, const Vector& direction, void* utlVecOrigins, bool updatePositions, float soundtime, int speakerentity, void* soundParams) noexcept
 {
-    auto modulateVolume = [&](int(*get)(int)) {
-        if (const auto entity = interfaces->entityList->getEntity(entityIndex); localPlayer && entity && entity->isPlayer()) {
-            if (entityIndex == localPlayer->index())
-                volume *= get(0) / 100.0f;
-            else if (!entity->isOtherEnemy(localPlayer.get()))
-                volume *= get(1) / 100.0f;
-            else
-                volume *= get(2) / 100.0f;
-        }
-    };
-
-    modulateVolume([](int index) { return config->sound.players[index].masterVolume; });
-
-    if (strstr(soundEntry, "Weapon") && strstr(soundEntry, "Single")) {
-        modulateVolume([](int index) { return config->sound.players[index].weaponVolume; });
-    }
-    
+    Sound::modulateSound(soundEntry, entityIndex, volume);
     Misc::autoAccept(soundEntry);
 
     volume = std::clamp(volume, 0.0f, 1.0f);
@@ -422,27 +404,9 @@ static int __STDCALL listLeavesInBox(const Vector& mins, const Vector& maxs, uns
 static int __FASTCALL dispatchSound(SoundInfo& soundInfo) noexcept
 {
     if (const char* soundName = interfaces->soundEmitter->getSoundName(soundInfo.soundIndex)) {
-        auto modulateVolume = [&soundInfo](int(*get)(int)) {
-            if (auto entity{ interfaces->entityList->getEntity(soundInfo.entityIndex) }; entity && entity->isPlayer()) {
-                if (localPlayer && soundInfo.entityIndex == localPlayer->index())
-                    soundInfo.volume *= get(0) / 100.0f;
-                else if (!entity->isOtherEnemy(localPlayer.get()))
-                    soundInfo.volume *= get(1) / 100.0f;
-                else
-                    soundInfo.volume *= get(2) / 100.0f;
-            }
-        };
-
-        modulateVolume([](int index) { return config->sound.players[index].masterVolume; });
-
-        if (!strcmp(soundName, "Player.DamageHelmetFeedback"))
-            modulateVolume([](int index) { return config->sound.players[index].headshotVolume; });
-        else if (strstr(soundName, "Step"))
-            modulateVolume([](int index) { return config->sound.players[index].footstepVolume; });
-        else if (strstr(soundName, "Chicken"))
-            soundInfo.volume *= config->sound.chickenVolume / 100.0f;
+        Sound::modulateSound(soundName, soundInfo.entityIndex, soundInfo.volume);
+        soundInfo.volume = std::clamp(soundInfo.volume, 0.0f, 1.0f);
     }
-    soundInfo.volume = std::clamp(soundInfo.volume, 0.0f, 1.0f);
     return hooks->originalDispatchSound(soundInfo);
 }
 
@@ -546,6 +510,7 @@ static void swapWindow(SDL_Window* window) noexcept
         Misc::spectatorList();
         Visuals::hitMarker(nullptr, ImGui::GetBackgroundDrawList());
         Visuals::drawMolotovHull(ImGui::GetBackgroundDrawList());
+        Misc::watermark();
 
         Aimbot::updateInput();
         Visuals::updateInput();
@@ -565,6 +530,9 @@ static void swapWindow(SDL_Window* window) noexcept
     ImGui::Render();
 
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+
+    GameData::clearUnusedAvatars();
+
     hooks->swapWindow(window);
 }
 
@@ -590,7 +558,6 @@ void Hooks::install() noexcept
 #endif
     
 #ifdef _WIN32
-    panel.init(interfaces->panel);
     bspQuery.init(interfaces->engine->getBSPTreeQuery());
 #endif
 
@@ -642,7 +609,6 @@ void Hooks::install() noexcept
 
 #ifdef _WIN32
     bspQuery.hookAt(6, listLeavesInBox);
-    panel.hookAt(41, paintTraverse);
     surface.hookAt(67, lockCursor);
 
     if constexpr (std::is_same_v<HookType, MinHook>)
@@ -674,6 +640,9 @@ static DWORD WINAPI unload(HMODULE moduleHandle) noexcept
 
 void Hooks::uninstall() noexcept
 {
+    Misc::updateEventListeners(true);
+    Visuals::updateEventListeners(true);
+
 #ifdef _WIN32
     if constexpr (std::is_same_v<HookType, MinHook>) {
         MH_DisableHook(MH_ALL_HOOKS);
@@ -683,7 +652,6 @@ void Hooks::uninstall() noexcept
 
 #ifdef _WIN32
     bspQuery.restore();
-    panel.restore();
 #endif
     client.restore();
     clientMode.restore();
