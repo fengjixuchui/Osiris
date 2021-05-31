@@ -2,6 +2,7 @@
 
 #include <cmath>
 
+#include "../Helpers.h"
 #include "Utils.h"
 
 class matrix3x4;
@@ -15,14 +16,14 @@ struct Vector {
         return x || y || z;
     }
     
-    constexpr auto operator==(const Vector& v) const noexcept
+    friend constexpr auto operator==(const Vector& a, const Vector& b) noexcept
     {
-        return x == v.x && y == v.y && z == v.z;
+        return a.x == b.x && a.y == b.y && a.z == b.z;
     }
 
-    constexpr auto operator!=(const Vector& v) const noexcept
+    friend constexpr auto operator!=(const Vector& a, const Vector& b) noexcept
     {
-        return !(*this == v);
+        return !(a == b);
     }
 
     constexpr Vector& operator=(const float array[3]) noexcept
@@ -65,19 +66,19 @@ struct Vector {
         return *this;
     }
 
-    constexpr auto operator-(const Vector& v) const noexcept
+    friend constexpr auto operator-(const Vector& a, const Vector& b) noexcept
     {
-        return Vector{ x - v.x, y - v.y, z - v.z };
+        return Vector{ a.x - b.x, a.y - b.y, a.z - b.z };
     }
 
-    constexpr auto operator+(const Vector& v) const noexcept
+    friend constexpr auto operator+(const Vector& a, const Vector& b) noexcept
     {
-        return Vector{ x + v.x, y + v.y, z + v.z };
+        return Vector{ a.x + b.x, a.y + b.y, a.z + b.z };
     }
     
-    constexpr auto operator*(const Vector& v) const noexcept
+    friend constexpr auto operator*(const Vector& a, const Vector& b) noexcept
     {
-        return Vector{ x * v.x, y * v.y, z * v.z };
+        return Vector{ a.x * b.x, a.y * b.y, a.z * b.z };
     }
 
     constexpr Vector& operator/=(float div) noexcept
@@ -140,16 +141,16 @@ struct Vector {
 
     auto toAngle() const noexcept
     {
-        return Vector{ radiansToDegrees(std::atan2(-z, std::hypot(x, y))),
-                       radiansToDegrees(std::atan2(y, x)),
+        return Vector{ Helpers::rad2deg(std::atan2(-z, std::hypot(x, y))),
+                       Helpers::rad2deg(std::atan2(y, x)),
                        0.0f };
     }
 
     static auto fromAngle(const Vector& angle) noexcept
     {
-        return Vector{ std::cos(degreesToRadians(angle.x)) * std::cos(degreesToRadians(angle.y)),
-                       std::cos(degreesToRadians(angle.x)) * std::sin(degreesToRadians(angle.y)),
-                      -std::sin(degreesToRadians(angle.x)) };
+        return Vector{ std::cos(Helpers::deg2rad(angle.x)) * std::cos(Helpers::deg2rad(angle.y)),
+                       std::cos(Helpers::deg2rad(angle.x)) * std::sin(Helpers::deg2rad(angle.y)),
+                      -std::sin(Helpers::deg2rad(angle.x)) };
     }
 
     float x, y, z;

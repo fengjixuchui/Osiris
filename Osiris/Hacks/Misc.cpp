@@ -1,23 +1,38 @@
+#include <algorithm>
+#include <array>
 #include <mutex>
+#include <numbers>
 #include <numeric>
 #include <sstream>
+#include <vector>
+
+#ifdef __linux__
+#include <sys/mman.h>
+#include <unistd.h>
+#endif
 
 #include "../imgui/imgui.h"
 #define IMGUI_DEFINE_MATH_OPERATORS
 #include "../imgui/imgui_internal.h"
 
 #include "../Config.h"
+#include "../InputUtil.h"
 #include "../Interfaces.h"
 #include "../Memory.h"
-#include "../Netvars.h"
 
 #include "EnginePrediction.h"
 #include "Misc.h"
 
+#include "../SDK/ClassId.h"
 #include "../SDK/Client.h"
+#include "../SDK/ClientClass.h"
 #include "../SDK/ClientMode.h"
 #include "../SDK/ConVar.h"
+#include "../SDK/Cvar.h"
+#include "../SDK/Engine.h"
+#include "../SDK/EngineTrace.h"
 #include "../SDK/Entity.h"
+#include "../SDK/EntityList.h"
 #include "../SDK/FrameStage.h"
 #include "../SDK/GameEvent.h"
 #include "../SDK/GlobalVars.h"
@@ -26,9 +41,12 @@
 #include "../SDK/LocalPlayer.h"
 #include "../SDK/NetworkChannel.h"
 #include "../SDK/Panorama.h"
-#include "../SDK/Surface.h"
+#include "../SDK/Platform.h"
 #include "../SDK/UserCmd.h"
+#include "../SDK/UtlVector.h"
+#include "../SDK/Vector.h"
 #include "../SDK/WeaponData.h"
+#include "../SDK/WeaponId.h"
 #include "../SDK/WeaponSystem.h"
 
 #include "../GUI.h"
@@ -555,11 +573,16 @@ void Misc::fakePrime() noexcept
 
 #ifdef _WIN32
         if (DWORD oldProtect; VirtualProtect(memory->fakePrime, 1, PAGE_EXECUTE_READWRITE, &oldProtect)) {
+#else
+	if (const auto addressPageAligned = std::uintptr_t(memory->fakePrime) - std::uintptr_t(memory->fakePrime) % sysconf(_SC_PAGESIZE);
+	    mprotect((void*)addressPageAligned, 1, PROT_READ | PROT_WRITE | PROT_EXEC) == 0) {
+#endif
             constexpr uint8_t patch[]{ 0x74, 0xEB };
             *memory->fakePrime = patch[config->misc.fakePrime];
+#ifdef _WIN32
             VirtualProtect(memory->fakePrime, 1, oldProtect, nullptr);
-        }
 #endif
+        }
     }
 }
 
@@ -590,8 +613,8 @@ void Misc::fixMovement(UserCmd* cmd, float yaw) noexcept
 
         const float forwardmove = cmd->forwardmove;
         const float sidemove = cmd->sidemove;
-        cmd->forwardmove = std::cos(degreesToRadians(yawDelta)) * forwardmove + std::cos(degreesToRadians(yawDelta + 90.0f)) * sidemove;
-        cmd->sidemove = std::sin(degreesToRadians(yawDelta)) * forwardmove + std::sin(degreesToRadians(yawDelta + 90.0f)) * sidemove;
+        cmd->forwardmove = std::cos(Helpers::deg2rad(yawDelta)) * forwardmove + std::cos(Helpers::deg2rad(yawDelta + 90.0f)) * sidemove;
+        cmd->sidemove = std::sin(Helpers::deg2rad(yawDelta)) * forwardmove + std::sin(Helpers::deg2rad(yawDelta + 90.0f)) * sidemove;
     }
 }
 
@@ -967,16 +990,45 @@ void Misc::voteRevealer(GameEvent& event) noexcept
     memory->clientMode->getHudChat()->printf(0, " \x0C\u2022Osiris\u2022 %c%s\x01 voted %c%s\x01", isLocal ? '\x01' : color, isLocal ? "You" : entity->getPlayerName().c_str(), color, votedYes ? "Yes" : "No");
 }
 
+// ImGui::ShadeVertsLinearColorGradientKeepAlpha() modified to do interpolation in HSV
+static void shadeVertsHSVColorGradientKeepAlpha(ImDrawList* draw_list, int vert_start_idx, int vert_end_idx, ImVec2 gradient_p0, ImVec2 gradient_p1, ImU32 col0, ImU32 col1)
+{
+    ImVec2 gradient_extent = gradient_p1 - gradient_p0;
+    float gradient_inv_length2 = 1.0f / ImLengthSqr(gradient_extent);
+    ImDrawVert* vert_start = draw_list->VtxBuffer.Data + vert_start_idx;
+    ImDrawVert* vert_end = draw_list->VtxBuffer.Data + vert_end_idx;
+
+    ImVec4 col0HSV = ImGui::ColorConvertU32ToFloat4(col0);
+    ImVec4 col1HSV = ImGui::ColorConvertU32ToFloat4(col1);
+    ImGui::ColorConvertRGBtoHSV(col0HSV.x, col0HSV.y, col0HSV.z, col0HSV.x, col0HSV.y, col0HSV.z);
+    ImGui::ColorConvertRGBtoHSV(col1HSV.x, col1HSV.y, col1HSV.z, col1HSV.x, col1HSV.y, col1HSV.z);
+    ImVec4 colDelta = col1HSV - col0HSV;
+
+    for (ImDrawVert* vert = vert_start; vert < vert_end; vert++)
+    {
+        float d = ImDot(vert->pos - gradient_p0, gradient_extent);
+        float t = ImClamp(d * gradient_inv_length2, 0.0f, 1.0f);
+
+        float h = col0HSV.x + colDelta.x * t;
+        float s = col0HSV.y + colDelta.y * t;
+        float v = col0HSV.z + colDelta.z * t;
+
+        ImVec4 rgb;
+        ImGui::ColorConvertHSVtoRGB(h, s, v, rgb.x, rgb.y, rgb.z);
+        vert->col = (ImGui::ColorConvertFloat4ToU32(rgb) & ~IM_COL32_A_MASK) | (vert->col & IM_COL32_A_MASK);
+    }
+}
+
 void Misc::drawOffscreenEnemies(ImDrawList* drawList) noexcept
 {
     if (!config->misc.offscreenEnemies.enabled)
         return;
 
-    const auto yaw = degreesToRadians(interfaces->engine->getViewAngles().y);
+    const auto yaw = Helpers::deg2rad(interfaces->engine->getViewAngles().y);
 
     GameData::Lock lock;
     for (auto& player : GameData::players()) {
-        if (player.dormant || !player.alive || !player.enemy || player.inViewFrustum)
+        if ((player.dormant && player.fadingAlpha() == 0.0f) || !player.alive || !player.enemy || player.inViewFrustum)
             continue;
 
         const auto positionDiff = GameData::local().origin - player.origin;
@@ -992,18 +1044,22 @@ void Misc::drawOffscreenEnemies(ImDrawList* drawList) noexcept
         constexpr auto triangleSize = 10.0f;
 
         const auto pos = ImGui::GetIO().DisplaySize / 2 + ImVec2{ x, y } * 200;
-        const auto trianglePos = pos + ImVec2{ x, y } * (avatarRadius + 3);
+        const auto trianglePos = pos + ImVec2{ x, y } * (avatarRadius + (config->misc.offscreenEnemies.healthBar.enabled ? 5 : 3));
 
+        Helpers::setAlphaFactor(player.fadingAlpha());
         const auto white = Helpers::calculateColor(255, 255, 255, 255);
-        const auto color = Helpers::calculateColor(config->misc.offscreenEnemies.color);
+        const auto background = Helpers::calculateColor(0, 0, 0, 80);
+        const auto color = Helpers::calculateColor(config->misc.offscreenEnemies);
+        const auto healthBarColor = config->misc.offscreenEnemies.healthBar.type == HealthBar::HealthBased ? Helpers::healthColor(std::clamp(player.health / 100.0f, 0.0f, 1.0f)) : Helpers::calculateColor(config->misc.offscreenEnemies.healthBar);
+        Helpers::setAlphaFactor(1.0f);
 
         const ImVec2 trianglePoints[]{
             trianglePos + ImVec2{  0.4f * y, -0.4f * x } * triangleSize,
             trianglePos + ImVec2{  1.0f * x,  1.0f * y } * triangleSize,
             trianglePos + ImVec2{ -0.4f * y,  0.4f * x } * triangleSize
         };
-        drawList->AddConvexPolyFilled(trianglePoints, 3, color);
 
+        drawList->AddConvexPolyFilled(trianglePoints, 3, color);
         drawList->AddCircleFilled(pos, avatarRadius + 1, white & IM_COL32_A_MASK, 40);
 
         const auto texture = player.getAvatarTexture();
@@ -1019,6 +1075,26 @@ void Misc::drawOffscreenEnemies(ImDrawList* drawList) noexcept
 
         if (pushTextureId)
             drawList->PopTextureID();
+
+        if (config->misc.offscreenEnemies.healthBar.enabled) {
+            const auto radius = avatarRadius + 2;
+            const auto healthFraction = std::clamp(player.health / 100.0f, 0.0f, 1.0f);
+
+            drawList->AddCircle(pos, radius, background, 40, 3.0f);
+
+            const int vertStartIdx = drawList->VtxBuffer.Size;
+            if (healthFraction == 1.0f) { // sometimes PathArcTo is missing one top pixel when drawing a full circle, so draw it with AddCircle
+                drawList->AddCircle(pos, radius, healthBarColor, 40, 2.0f);
+            } else {
+                constexpr float pi = std::numbers::pi_v<float>;
+                drawList->PathArcTo(pos, radius - 0.5f, pi / 2 - pi * healthFraction, pi / 2 + pi * healthFraction, 40);
+                drawList->PathStroke(healthBarColor, false, 2.0f);
+            }
+            const int vertEndIdx = drawList->VtxBuffer.Size;
+
+            if (config->misc.offscreenEnemies.healthBar.type == HealthBar::Gradient)
+                shadeVertsHSVColorGradientKeepAlpha(drawList, vertStartIdx, vertEndIdx, pos - ImVec2{ 0.0f, radius }, pos + ImVec2{ 0.0f, radius }, IM_COL32(0, 255, 0, 255), IM_COL32(255, 0, 0, 255));
+        }
     }
 }
 
@@ -1041,23 +1117,6 @@ void Misc::autoAccept(const char* soundEntry) noexcept
     FlashWindowEx(&flash);
     ShowWindow(window, SW_RESTORE);
 #endif
-}
-
-void Misc::deathmatchGod() noexcept
-{
-    if (!config->misc.deathmatchGod || !localPlayer->isAlive() || !localPlayer->gunGameImmunity())
-        return;
-
-    static auto gameType{ interfaces->cvar->findVar("game_type") };
-    static auto gameMode{ interfaces->cvar->findVar("game_mode") };
-    if (gameType->getInt() != 1 || gameMode->getInt() != 2)
-        return;
-
-    static auto nextTime = 0.0f;
-    if (nextTime <= memory->globalVars->realtime) {
-        interfaces->engine->clientCmdUnrestricted("open_buymenu");
-        nextTime = memory->globalVars->realtime + 0.25f;
-    }
 }
 
 void Misc::updateEventListeners(bool forceRemove) noexcept

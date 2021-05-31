@@ -1,8 +1,12 @@
-﻿#include <array>
-#include <cwctype>
+﻿#include <algorithm>
+#include <array>
+#include <cwchar>
 #include <fstream>
-#include <functional>
+#include <iterator>
 #include <string>
+#include <string_view>
+#include <unordered_map>
+#include <vector>
 
 #ifdef _WIN32
 #include <ShlObj.h>
@@ -11,15 +15,15 @@
 
 #include "imgui/imgui.h"
 #include "imgui/imgui_internal.h"
-#include "imgui/imgui_impl_win32.h"
 #include "imgui/imgui_stdlib.h"
 
 #include "imguiCustom.h"
 
 #include "GUI.h"
 #include "Config.h"
+#include "ConfigStructs.h"
 #include "Hacks/Misc.h"
-#include "Hacks/SkinChanger.h"
+#include "Hacks/InventoryChanger.h"
 #include "Helpers.h"
 #include "Hooks.h"
 #include "Interfaces.h"
@@ -88,7 +92,7 @@ GUI::GUI() noexcept
     if (!fonts.normal15px)
         io.Fonts->AddFontDefault(&cfg);
     addFontFromVFONT("csgo/panorama/fonts/notosanskr-regular.vfont", 15.0f, io.Fonts->GetGlyphRangesKorean(), true);
-    addFontFromVFONT("csgo/panorama/fonts/notosanssc-regular.vfont", 15.0f, io.Fonts->GetGlyphRangesChineseFull(), true);
+    addFontFromVFONT("csgo/panorama/fonts/notosanssc-regular.vfont", 17.0f, io.Fonts->GetGlyphRangesChineseFull(), true);
 }
 
 void GUI::render() noexcept
@@ -103,7 +107,7 @@ void GUI::render() noexcept
         renderChamsWindow();
         renderStreamProofESPWindow();
         renderVisualsWindow();
-        renderSkinChangerWindow();
+        InventoryChanger::drawGUI(false);
         Sound::drawGUI(false);
         renderStyleWindow();
         renderMiscWindow();
@@ -179,7 +183,7 @@ void GUI::renderMenuBar() noexcept
         menuBarItem("Chams", window.chams);
         menuBarItem("ESP", window.streamProofESP);
         menuBarItem("Visuals", window.visuals);
-        menuBarItem("Skin changer", window.skinChanger);
+        InventoryChanger::menuBarItem();
         Sound::menuBarItem();
         menuBarItem("Style", window.style);
         menuBarItem("Misc", window.misc);
@@ -845,7 +849,25 @@ void GUI::renderStreamProofESPWindow(bool contentOnly) noexcept
             ImGui::PopID();
         
             ImGui::SameLine(spacing);
-            ImGui::Checkbox("Health Bar", &playerConfig.healthBar);
+            ImGui::Checkbox("Health Bar", &playerConfig.healthBar.enabled);
+            ImGui::SameLine();
+
+            ImGui::PushID("Health Bar");
+
+            if (ImGui::Button("..."))
+                ImGui::OpenPopup("");
+
+            if (ImGui::BeginPopup("")) {
+                ImGui::SetNextItemWidth(95.0f);
+                ImGui::Combo("Type", &playerConfig.healthBar.type, "Gradient\0Solid\0Health-based\0");
+                if (playerConfig.healthBar.type == HealthBar::Solid) {
+                    ImGui::SameLine();
+                    ImGuiCustom::colorPicker("", static_cast<Color4&>(playerConfig.healthBar));
+                }
+                ImGui::EndPopup();
+            }
+
+            ImGui::PopID();
         } else if (currentCategory == 2) {
             auto& weaponConfig = config->streamProofESP.weapons[currentItem];
             ImGuiCustom::colorPicker("Ammo", weaponConfig.ammo);
@@ -961,7 +983,7 @@ void GUI::renderVisualsWindow(bool contentOnly) noexcept
     ImGui::SliderFloat("Hit effect time", &config->visuals.hitEffectTime, 0.1f, 1.5f, "%.2fs");
     ImGui::Combo("Hit marker", &config->visuals.hitMarker, "None\0Default (Cross)\0");
     ImGui::SliderFloat("Hit marker time", &config->visuals.hitMarkerTime, 0.1f, 1.5f, "%.2fs");
-    ImGuiCustom::colorPicker("Bullet Tracers", config->visuals.bulletTracers.color.color.data(), &config->visuals.bulletTracers.color.color[3], nullptr, nullptr, &config->visuals.bulletTracers.enabled);
+    ImGuiCustom::colorPicker("Bullet Tracers", config->visuals.bulletTracers.color.data(), &config->visuals.bulletTracers.color[3], nullptr, nullptr, &config->visuals.bulletTracers.enabled);
     ImGuiCustom::colorPicker("Molotov Hull", config->visuals.molotovHull);
 
     ImGui::Checkbox("Color correction", &config->visuals.colorCorrection.enabled);
@@ -982,247 +1004,6 @@ void GUI::renderVisualsWindow(bool contentOnly) noexcept
         ImGui::EndPopup();
     }
     ImGui::Columns(1);
-
-    if (!contentOnly)
-        ImGui::End();
-}
-
-void GUI::renderSkinChangerWindow(bool contentOnly) noexcept
-{
-    if (!contentOnly) {
-        if (!window.skinChanger)
-            return;
-        ImGui::SetNextWindowSize({ 700.0f, 0.0f });
-        if (!ImGui::Begin("Skin changer", &window.skinChanger, windowFlags)) {
-            ImGui::End();
-            return;
-        }
-    }
-
-    static auto itemIndex = 0;
-
-    ImGui::PushItemWidth(110.0f);
-    ImGui::Combo("##1", &itemIndex, [](void* data, int idx, const char** out_text) {
-        *out_text = SkinChanger::weapon_names[idx].name;
-        return true;
-        }, nullptr, SkinChanger::weapon_names.size(), 5);
-    ImGui::PopItemWidth();
-
-    auto& selected_entry = config->skinChanger[itemIndex];
-    selected_entry.itemIdIndex = itemIndex;
-
-    constexpr auto rarityColor = [](int rarity) {
-        constexpr auto rarityColors = std::to_array<ImU32>({
-            IM_COL32(0,     0,   0,   0),
-            IM_COL32(176, 195, 217, 255),
-            IM_COL32( 94, 152, 217, 255),
-            IM_COL32( 75, 105, 255, 255),
-            IM_COL32(136,  71, 255, 255),
-            IM_COL32(211,  44, 230, 255),
-            IM_COL32(235,  75,  75, 255),
-            IM_COL32(228, 174,  57, 255)
-        });
-        return rarityColors[static_cast<std::size_t>(rarity) < rarityColors.size() ? rarity : 0];
-    };
-
-    constexpr auto passesFilter = [](const std::wstring& str, std::wstring filter) {
-        constexpr auto delimiter = L" ";
-        wchar_t* _;
-        wchar_t* token = std::wcstok(filter.data(), delimiter, &_);
-        while (token) {
-            if (!std::wcsstr(str.c_str(), token))
-                return false;
-            token = std::wcstok(nullptr, delimiter, &_);
-        }
-        return true;
-    };
-
-    {
-        ImGui::SameLine();
-        ImGui::Checkbox("Enabled", &selected_entry.enabled);
-        ImGui::Separator();
-        ImGui::Columns(2, nullptr, false);
-        ImGui::InputInt("Seed", &selected_entry.seed);
-        ImGui::InputInt("StatTrak\u2122", &selected_entry.stat_trak);
-        selected_entry.stat_trak = (std::max)(selected_entry.stat_trak, -1);
-        ImGui::SliderFloat("Wear", &selected_entry.wear, FLT_MIN, 1.f, "%.10f", ImGuiSliderFlags_Logarithmic);
-
-        const auto& kits = itemIndex == 1 ? SkinChanger::getGloveKits() : SkinChanger::getSkinKits();
-
-        if (ImGui::BeginCombo("Paint Kit", kits[selected_entry.paint_kit_vector_index].name.c_str())) {
-            ImGui::PushID("Paint Kit");
-            ImGui::PushID("Search");
-            ImGui::SetNextItemWidth(-1.0f);
-            static std::array<std::string, SkinChanger::weapon_names.size()> filters;
-            auto& filter = filters[itemIndex];
-            ImGui::InputTextWithHint("", "Search", &filter);
-            if (ImGui::IsItemHovered() || (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && !ImGui::IsAnyItemActive() && !ImGui::IsMouseClicked(0)))
-                ImGui::SetKeyboardFocusHere(-1);
-            ImGui::PopID();
-
-            const std::wstring filterWide = Helpers::toUpper(Helpers::toWideString(filter));
-            if (ImGui::BeginChild("##scrollarea", { 0, 6 * ImGui::GetTextLineHeightWithSpacing() })) {
-                for (std::size_t i = 0; i < kits.size(); ++i) {
-                    if (filter.empty() || passesFilter(kits[i].nameUpperCase, filterWide)) {
-                        ImGui::PushID(i);
-                        const auto selected = i == selected_entry.paint_kit_vector_index;
-                        if (ImGui::SelectableWithBullet(kits[i].name.c_str(), rarityColor(kits[i].rarity), selected)) {
-                            selected_entry.paint_kit_vector_index = i;
-                            ImGui::CloseCurrentPopup();
-                        }
-
-                        if (ImGui::IsItemHovered()) {
-                            if (const auto icon = SkinChanger::getItemIconTexture(kits[i].iconPath)) {
-                                ImGui::BeginTooltip();
-                                ImGui::Image(icon, { 200.0f, 150.0f });
-                                ImGui::EndTooltip();
-                            }
-                        }
-                        if (selected && ImGui::IsWindowAppearing())
-                            ImGui::SetScrollHereY();
-                        ImGui::PopID();
-                    }
-                }
-                ImGui::EndChild();
-            }
-            ImGui::PopID();
-            ImGui::EndCombo();
-        }
-
-        ImGui::Combo("Quality", &selected_entry.entity_quality_vector_index, [](void* data, int idx, const char** out_text) {
-            *out_text = SkinChanger::getQualities()[idx].name.c_str(); // safe within this lamba
-            return true;
-            }, nullptr, SkinChanger::getQualities().size(), 5);
-
-        if (itemIndex == 0) {
-            ImGui::Combo("Knife", &selected_entry.definition_override_vector_index, [](void* data, int idx, const char** out_text) {
-                *out_text = SkinChanger::getKnifeTypes()[idx].name.c_str();
-                return true;
-                }, nullptr, SkinChanger::getKnifeTypes().size(), 5);
-        } else if (itemIndex == 1) {
-            ImGui::Combo("Glove", &selected_entry.definition_override_vector_index, [](void* data, int idx, const char** out_text) {
-                *out_text = SkinChanger::getGloveTypes()[idx].name.c_str();
-                return true;
-                }, nullptr, SkinChanger::getGloveTypes().size(), 5);
-        } else {
-            static auto unused_value = 0;
-            selected_entry.definition_override_vector_index = 0;
-            ImGui::Combo("Unavailable", &unused_value, "For knives or gloves\0");
-        }
-
-        ImGui::InputText("Name Tag", selected_entry.custom_name, 32);
-    }
-
-    ImGui::NextColumn();
-
-    {
-        ImGui::PushID("sticker");
-
-        static std::size_t selectedStickerSlot = 0;
-
-        ImGui::PushItemWidth(-1);
-        ImVec2 size;
-        size.x = 0.0f;
-        size.y = ImGui::GetTextLineHeightWithSpacing() * 5.25f + ImGui::GetStyle().FramePadding.y * 2.0f;
-
-        if (ImGui::BeginListBox("", size)) {
-            for (int i = 0; i < 5; ++i) {
-                ImGui::PushID(i);
-
-                const auto kit_vector_index = config->skinChanger[itemIndex].stickers[i].kit_vector_index;
-                const std::string text = '#' + std::to_string(i + 1) + "  " + SkinChanger::getStickerKits()[kit_vector_index].name;
-
-                if (ImGui::Selectable(text.c_str(), i == selectedStickerSlot))
-                    selectedStickerSlot = i;
-
-                ImGui::PopID();
-            }
-            ImGui::EndListBox();
-        }
-
-        ImGui::PopItemWidth();
-
-        auto& selected_sticker = selected_entry.stickers[selectedStickerSlot];
-
-        const auto& kits = SkinChanger::getStickerKits();
-        if (ImGui::BeginCombo("Sticker", kits[selected_sticker.kit_vector_index].name.c_str())) {
-            ImGui::PushID("Sticker");
-            ImGui::PushID("Search");
-            ImGui::SetNextItemWidth(-1.0f);
-            static std::array<std::string, SkinChanger::weapon_names.size()> filters;
-            auto& filter = filters[itemIndex];
-            ImGui::InputTextWithHint("", "Search", &filter);
-            if (ImGui::IsItemHovered() || (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && !ImGui::IsAnyItemActive() && !ImGui::IsMouseClicked(0)))
-                ImGui::SetKeyboardFocusHere(-1);
-            ImGui::PopID();
-
-            const std::wstring filterWide = Helpers::toUpper(Helpers::toWideString(filter));
-            if (ImGui::BeginChild("##scrollarea", { 0, 6 * ImGui::GetTextLineHeightWithSpacing() })) {
-                for (std::size_t i = 0; i < kits.size(); ++i) {
-                    if (filter.empty() || passesFilter(kits[i].nameUpperCase, filterWide)) {
-                        ImGui::PushID(i);
-                        const auto selected = i == selected_sticker.kit_vector_index;
-                        if (ImGui::SelectableWithBullet(kits[i].name.c_str(), rarityColor(kits[i].rarity), selected)) {
-                            selected_sticker.kit_vector_index = i;
-                            ImGui::CloseCurrentPopup();
-                        }
-                        if (ImGui::IsItemHovered()) {
-                            if (const auto icon = SkinChanger::getItemIconTexture(kits[i].iconPath)) {
-                                ImGui::BeginTooltip();
-                                ImGui::Image(icon, { 200.0f, 150.0f });
-                                ImGui::EndTooltip();
-                            }
-                        }
-                        if (selected && ImGui::IsWindowAppearing())
-                            ImGui::SetScrollHereY();
-                        ImGui::PopID();
-                    }
-                }
-                ImGui::EndChild();
-            }
-            ImGui::PopID();
-            ImGui::EndCombo();
-        }
-
-        ImGui::SliderFloat("Wear", &selected_sticker.wear, FLT_MIN, 1.0f, "%.10f", ImGuiSliderFlags_Logarithmic);
-        ImGui::SliderFloat("Scale", &selected_sticker.scale, 0.1f, 5.0f);
-        ImGui::SliderFloat("Rotation", &selected_sticker.rotation, 0.0f, 360.0f);
-
-        ImGui::PopID();
-    }
-    selected_entry.update();
-
-    ImGui::Columns(1);
-
-    ImGui::Separator();
-
-    if (ImGui::Button("Update", { 130.0f, 30.0f }))
-        SkinChanger::scheduleHudUpdate();
-
-    ImGui::TextUnformatted("nSkinz by namazso");
-
-    if (!contentOnly)
-        ImGui::End();
-}
-
-void GUI::renderSoundWindow(bool contentOnly) noexcept
-{
-    if (!contentOnly) {
-        if (!window.sound)
-            return;
-        ImGui::SetNextWindowSize({ 0.0f, 0.0f });
-        ImGui::Begin("Sound", &window.sound, windowFlags);
-    }
-    ImGui::SliderInt("Chicken volume", &config->sound.chickenVolume, 0, 200, "%d%%");
-
-    static int currentCategory{ 0 };
-    ImGui::PushItemWidth(110.0f);
-    ImGui::Combo("", &currentCategory, "Local player\0Allies\0Enemies\0");
-    ImGui::PopItemWidth();
-    ImGui::SliderInt("Master volume", &config->sound.players[currentCategory].masterVolume, 0, 200, "%d%%");
-    ImGui::SliderInt("Headshot volume", &config->sound.players[currentCategory].headshotVolume, 0, 200, "%d%%");
-    ImGui::SliderInt("Weapon volume", &config->sound.players[currentCategory].weaponVolume, 0, 200, "%d%%");
-    ImGui::SliderInt("Footstep volume", &config->sound.players[currentCategory].footstepVolume, 0, 200, "%d%%");
 
     if (!contentOnly)
         ImGui::End();
@@ -1293,7 +1074,6 @@ void GUI::renderMiscWindow(bool contentOnly) noexcept
     ImGui::Checkbox("Reveal money", &config->misc.revealMoney);
     ImGui::Checkbox("Reveal suspect", &config->misc.revealSuspect);
     ImGui::Checkbox("Reveal votes", &config->misc.revealVotes);
-    ImGui::Checkbox("Deathmatch godmode", &config->misc.deathmatchGod);
 
     ImGui::Checkbox("Spectator list", &config->misc.spectatorList.enabled);
     ImGui::SameLine();
@@ -1309,7 +1089,24 @@ void GUI::renderMiscWindow(bool contentOnly) noexcept
     ImGui::PopID();
 
     ImGui::Checkbox("Watermark", &config->misc.watermark.enabled);
-    ImGuiCustom::colorPicker("Offscreen Enemies", config->misc.offscreenEnemies.color, &config->misc.offscreenEnemies.enabled);
+    ImGuiCustom::colorPicker("Offscreen Enemies", config->misc.offscreenEnemies, &config->misc.offscreenEnemies.enabled);
+    ImGui::SameLine();
+    ImGui::PushID("Offscreen Enemies");
+    if (ImGui::Button("..."))
+        ImGui::OpenPopup("");
+
+    if (ImGui::BeginPopup("")) {
+        ImGui::Checkbox("Health Bar", &config->misc.offscreenEnemies.healthBar.enabled);
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(95.0f);
+        ImGui::Combo("Type", &config->misc.offscreenEnemies.healthBar.type, "Gradient\0Solid\0Health-based\0");
+        if (config->misc.offscreenEnemies.healthBar.type == HealthBar::Solid) {
+            ImGui::SameLine();
+            ImGuiCustom::colorPicker("", static_cast<Color4&>(config->misc.offscreenEnemies.healthBar));
+        }
+        ImGui::EndPopup();
+    }
+    ImGui::PopID();
     ImGui::Checkbox("Fix animation LOD", &config->misc.fixAnimationLOD);
     ImGui::Checkbox("Fix bone matrix", &config->misc.fixBoneMatrix);
     ImGui::Checkbox("Fix movement", &config->misc.fixMovement);
@@ -1513,13 +1310,13 @@ void GUI::renderConfigWindow(bool contentOnly) noexcept
             ImGui::OpenPopup("Config to reset");
 
         if (ImGui::BeginPopup("Config to reset")) {
-            static constexpr const char* names[]{ "Whole", "Aimbot", "Triggerbot", "Backtrack", "Anti aim", "Glow", "Chams", "ESP", "Visuals", "Skin changer", "Sound", "Style", "Misc" };
+            static constexpr const char* names[]{ "Whole", "Aimbot", "Triggerbot", "Backtrack", "Anti aim", "Glow", "Chams", "ESP", "Visuals", "Inventory Changer", "Sound", "Style", "Misc" };
             for (int i = 0; i < IM_ARRAYSIZE(names); i++) {
                 if (i == 1) ImGui::Separator();
 
                 if (ImGui::Selectable(names[i])) {
                     switch (i) {
-                    case 0: config->reset(); updateColors(); Misc::updateClanTag(true); SkinChanger::scheduleHudUpdate(); break;
+                    case 0: config->reset(); updateColors(); Misc::updateClanTag(true); InventoryChanger::scheduleHudUpdate(); break;
                     case 1: config->aimbot = { }; break;
                     case 2: config->triggerbot = { }; break;
                     case 3: Backtrack::resetConfig(); break;
@@ -1528,8 +1325,8 @@ void GUI::renderConfigWindow(bool contentOnly) noexcept
                     case 6: config->chams = { }; break;
                     case 7: config->streamProofESP = { }; break;
                     case 8: config->visuals = { }; break;
-                    case 9: config->skinChanger = { }; SkinChanger::scheduleHudUpdate(); break;
-                    case 10: config->sound = { }; break;
+                    case 9: InventoryChanger::resetConfig(); InventoryChanger::scheduleHudUpdate(); break;
+                    case 10: Sound::resetConfig(); break;
                     case 11: config->style = { }; updateColors(); break;
                     case 12: config->misc = { };  Misc::updateClanTag(true); break;
                     }
@@ -1541,7 +1338,7 @@ void GUI::renderConfigWindow(bool contentOnly) noexcept
             if (ImGui::Button("Load selected", { 100.0f, 25.0f })) {
                 config->load(currentConfig, incrementalLoad);
                 updateColors();
-                SkinChanger::scheduleHudUpdate();
+                InventoryChanger::scheduleHudUpdate();
                 Misc::updateClanTag(true);
             }
             if (ImGui::Button("Save selected", { 100.0f, 25.0f }))
@@ -1588,10 +1385,7 @@ void GUI::renderGuiStyle2() noexcept
             renderVisualsWindow(true);
             ImGui::EndTabItem();
         }
-        if (ImGui::BeginTabItem("Skin changer")) {
-            renderSkinChangerWindow(true);
-            ImGui::EndTabItem();
-        }
+        InventoryChanger::tabItem();
         Sound::tabItem();
         if (ImGui::BeginTabItem("Style")) {
             renderStyleWindow(true);

@@ -1,16 +1,30 @@
+#include <algorithm>
 #include <array>
+#include <memory>
+#include <string>
+#include <unordered_map>
+#include <utility>
+#include <vector>
 
 #include "../nlohmann/json.hpp"
+#include "../imgui/imgui.h"
 
-#include "../Config.h"
+#include "../ConfigStructs.h"
+#include "../InputUtil.h"
 #include "Glow.h"
+#include "../Helpers.h"
 #include "../Interfaces.h"
 #include "../Memory.h"
-#include "../SDK/Entity.h"
+#include "../SDK/ClassId.h"
 #include "../SDK/ClientClass.h"
+#include "../SDK/Engine.h"
+#include "../SDK/Entity.h"
+#include "../SDK/EntityList.h"
 #include "../SDK/GlowObjectManager.h"
-#include "../SDK/GlobalVars.h"
+#include "../SDK/LocalPlayer.h"
 #include "../SDK/Utils.h"
+#include "../SDK/UtlVector.h"
+#include "../SDK/Vector.h"
 #include "../imguiCustom.h"
 
 #if OSIRIS_GLOW()
@@ -87,14 +101,14 @@ void Glow::render() noexcept
                 glowobject.glowAlpha = glow.color[3];
                 glowobject.glowStyle = glow.style;
                 glowobject.glowAlphaMax = 0.6f;
-                if (glow.healthBased && health)
-                    glowobject.glowColor = { 1.0f - health / 100.0f,  health / 100.0f, 0.0f };
-                else if (glow.rainbow) {
+                if (glow.healthBased && health) {
+                    Helpers::healthColor(std::clamp(health / 100.0f, 0.0f, 1.0f), glowobject.glowColor.x, glowobject.glowColor.y, glowobject.glowColor.z);
+                } else if (glow.rainbow) {
                     const auto [r, g, b] { rainbowColor(glow.rainbowSpeed) };
                     glowobject.glowColor = { r, g, b };
-                }
-                else
+                } else {
                     glowobject.glowColor = { glow.color[0], glow.color[1], glow.color[2] };
+                }
             }
         };
 
